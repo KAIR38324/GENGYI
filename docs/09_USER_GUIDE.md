@@ -1,6 +1,18 @@
-# GENGYI v0.2.0 使用与宿主验收
+# GENGYI v0.2.1 使用与宿主验收
 
 本包面向 Windows AutoCAD 2024（R24.3 / .NET Framework 4.8 / x64）。当前是已经实现并通过核心测试、API 编译的插件版本，尚未在实际 CAD 中完成加载和操作验收。安装包保留 `Contents/Windows` 内全部 DLL；不要将 Autodesk DLL 拷贝进来。
+
+## 持久安装与每次启动加载
+
+关闭 CAD，将整个 `Gengyi.bundle` 文件夹放入 `%APPDATA%\Autodesk\ApplicationPlugins\`，没有该目录时新建。目录应为 `ApplicationPlugins\Gengyi.bundle\PackageContents.xml`，主 DLL 位于同一 bundle 下的 `Contents\Windows\`。不要把单个 DLL 放在 ApplicationPlugins 根目录。
+
+v0.2.1 已显式设置 `LoadOnAutoCADStartup="True"`，保留按命令加载作为后备，关闭安装过程中的即时加载。完成安装后重启 CAD，加载器会尝试在启动时载入本插件；打开图纸后执行 `GYSETUP` 打开面板。启动加载不会自动弹出面板或修改图纸。自动发现和实际启动加载仍需在目标 CAD 内验收。
+
+`NETLOAD` 是当前进程内的手动验证方式，不是持久安装步骤。安全提示中的“始终加载”用于记录对文件/发布者的信任，与启动加载配置分别处理。遵守 CAD 正常安全加载提示和可信位置设置，不关闭 SECURELOAD。
+
+如果习惯 APPLOAD 的“启动组”，.NET DLL 可通过一个调用 NETLOAD 的 LSP 引导文件接入；本 bundle 已提供自动加载配置，通常只需选择这一种安装方式。更新已安装版本前先退出 CAD，再替换完整 bundle，保留个人图纸与本地块库。
+
+官方依据：[AutoCAD 2024 加载参数](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-Customization/files/GUID-3C25E517-8660-4BB7-9447-2310462EF06F.htm)、[Autodesk：自动加载 DLL](https://www.autodesk.com/support/technical/article/caas/sfdcarticles/sfdcarticles/How-to-autoload-DLLs-with-AutoCAD.html)。
 
 ## 开始布置
 

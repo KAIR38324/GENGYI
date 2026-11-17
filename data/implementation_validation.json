@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "source_base_commit": "46a5b44a45c2f9966d7d564f2ea6063622e34a5f",
   "target": "AutoCAD 2024 Windows x64 .NET Framework 4.8",
   "python_reference_tests": 16,
@@ -15,5 +15,6 @@
   "host_acceptance": "not_run_no_Windows_AutoCAD_in_this_environment",
   "original_native_blocks": "not_in_repository; local binding/import implemented",
   "source_visual_acceptance": "pending_real_CAD_comparison",
-  "statement": "Implementation and pure-code evidence are separate from real host acceptance."
+  "statement": "Implementation and pure-code evidence are separate from real host acceptance.",
+  "startup_loading": "LoadOnAutoCADStartup=True; configured and package checked; actual host launch pending"
 }

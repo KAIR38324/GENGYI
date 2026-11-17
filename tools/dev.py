@@ -13,6 +13,7 @@ import subprocess
 import sys
 import venv
 import zipfile
+from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "src/Gengyi.Cad.AutoCAD2024/Gengyi.Cad.AutoCAD2024.csproj"
@@ -101,7 +102,8 @@ def package() -> None:
     shutil.copy2(ROOT / "docs/09_USER_GUIDE.md", bundle / "USAGE.md")
     shutil.copy2(ROOT / "docs/environment-report.md", bundle)
     shutil.copytree(ROOT / "packaging/licenses", bundle / "licenses")
-    metadata = {"plugin_version": "0.2.0", "source_commit": run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip(),
+    manifest = ElementTree.parse(bundle / "PackageContents.xml").getroot()
+    metadata = {"plugin_version": manifest.attrib["AppVersion"], "source_commit": run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip(),
                 "working_tree_dirty": bool(run(["git", "status", "--porcelain"], capture_output=True, text=True).stdout.strip()),
                 "target_host": "AutoCAD 2024 Windows x64", "target_framework": "net48",
                 "host_acceptance": "not_run", "source_block_visual_acceptance": "pending_local_original_CAD"}

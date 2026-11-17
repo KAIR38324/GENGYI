@@ -2,9 +2,11 @@
 
 首版完整支持 **换鞋间、一更、二更三种房间模式**，可在男女子房间间切换。依据原方案分别布置 S 形双面鞋柜、12门个人衣柜和工装衣架，支持人数估算、矩形内多方案、默认正交拖动及各房间独立实时统计。
 
-**当前已实现三模式 C# 核心和 AutoCAD 2024 插件工程（v0.2.0）**：房间切换、人数参数、矩形/障碍选择、多候选、临时预览、正交拖动、原生块入图、原块绑定/导入、统计与图纸内持久化均有源码实现。核心回归与编译已验证；Windows CAD 加载、原生编辑/撤销和原块图面验收仍需真实宿主执行，尚不能称已完成现场验收。
+**当前已实现三模式 C# 核心和 AutoCAD 2024 插件工程（v0.2.1）**：房间切换、人数参数、矩形/障碍选择、多候选、临时预览、正交拖动、原生块入图、原块绑定/导入、统计与图纸内持久化均有源码实现。核心回归与编译已验证；Windows CAD 加载、原生编辑/撤销和原块图面验收仍需真实宿主执行，尚不能称已完成现场验收。
 
 目标为用户指定的 **CAD 2024**，按 AutoCAD 2024 Windows x64 / .NET Framework 4.8 构建。运行 `python tools/dev.py check` 检查，运行 `python tools/dev.py package` 生成 `artifacts/Gengyi.AutoCAD2024.zip`。在目标 CAD 中 `NETLOAD` 加载包内主 DLL，执行 `GYSETUP` 打开三模式面板。
+
+持久安装：退出 CAD，将完整 `Gengyi.bundle` 放进 `%APPDATA%\Autodesk\ApplicationPlugins\`，重启 CAD。v0.2.1 已配置每次 CAD 启动时加载；打开图纸后用 `GYSETUP` 显示面板。
 
 使用流程见 [用户指南](docs/09_USER_GUIDE.md)，开发与加载见 [开发说明](docs/08_DEVELOPMENT.md)，真实验证范围见 [实测报告](docs/environment-report.md)。原方案 10 张图片保持原字节；仓库仍没有用户原生 DWG/DXF 块库。可在本地绑定/导入原块，或明确启用 `image_reconstructed` 重建模式，不将示意块冒充原 CAD 块。
 
