@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
@@ -21,6 +22,16 @@ namespace Gengyi.Cad.AutoCAD2024
         internal static V2 Local(Frame f, Point3d p)
         {
             return f.ToLocal(A(p));
+        }
+        internal static Boundary ReadRectangle(Polyline pl,double units,Frame? reference=null)
+        {
+            if(!pl.Closed || pl.NumberOfVertices!=4 || Enumerable.Range(0,4).Any(i=>Math.Abs(pl.GetBulgeAt(i))>1e-9))
+                throw new ArgumentException("请选择闭合的四边直线矩形多段线；分开的线段、圆弧和不规则轮廓暂不支持。");
+            var a=pl.GetPoint3dAt(0);var x=pl.GetPoint3dAt(1)-a;var y=pl.GetPoint3dAt(3)-a;
+            if(x.Length<1e-8 || y.Length<1e-8 || Math.Abs(x.GetNormal().DotProduct(y.GetNormal()))>1e-8 ||
+                (pl.GetPoint3dAt(2)-(a+x+y)).Length>1e-6)throw new ArgumentException("所选轮廓不是有效矩形。可用 RECTANG 绘制自己的房间范围后选择。");
+            return BoundaryEditing.AlignOrientation(new Boundary{NativeHandle=pl.Handle.ToString(),Width=x.Length*units,Height=y.Length*units,
+                Frame=new Frame{Origin=A(a),XAxis=A(x.GetNormal()),YAxis=A(y.GetNormal()),MillimetersPerDrawingUnit=units}},reference);
         }
         internal static Matrix3d SourceToStandard(BlockMapping mapping) =>
             Matrix3d.Scaling(mapping.MillimetersPerSourceUnit,Point3d.Origin) *

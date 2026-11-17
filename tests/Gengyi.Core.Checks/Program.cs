@@ -10,6 +10,46 @@ static class Program
     static void Assert(bool value, string message) { if (!value) throw new Exception(message); passed++; Console.WriteLine("PASS " + message); }
     static Room Make(RoomMode mode, double w=15000, double h=12000) => new Room
     { Id="test", Mode=mode, Boundary=new Boundary { Width=w,Height=h } };
+    static double Distance(double[] a,double[] b)=>Math.Sqrt(a.Select((v,i)=>(v-b[i])*(v-b[i])).Sum());
+    static void BoundaryEditingChecks()
+    {
+        var room=Make(RoomMode.Shoe);
+        room.Boundary!.Frame=new Frame{Origin=new[]{100.0,200,300},XAxis=new[]{0.0,1,0},YAxis=new[]{0.0,0,1},MillimetersPerDrawingUnit=1000};
+        var item=new Placement{Id="existing",EquipmentId="S24",Position=new V2(1000,2000),Rotation=90,NativeHandle="A1",Locked=true};
+        room.Placed.Add(item);room.Obstacles.Add(new Region{NativeHandle="B1",Points=Geometry.Rect(4000,4000,1000,500)});
+        room.Closures.Add(new Region{NativeHandle="B2",Points=Geometry.Rect(0,1000,500,4000)});
+        room.DirtySeed=new V2(500,500);room.CleanSeed=new V2(6000,7000);
+        room.Candidates.Add(new Candidate{Items=new List<Placement>{Serialization.Copy(item)}});room.PreviewVisible=true;
+        var old=room.Boundary.Frame;
+        var cabinetWorld=Geometry.Outline(item).Select(old.ToWorld).ToArray();
+        var obstacleWorld=room.Obstacles[0].Points.Select(old.ToWorld).ToArray();
+        var closureWorld=room.Closures[0].Points.Select(old.ToWorld).ToArray();
+        var dirty=old.ToWorld(room.DirtySeed);var clean=old.ToWorld(room.CleanSeed);
+        var chosen=new Boundary{NativeHandle="CUSTOM",Width=20000,Height=20000,
+            Frame=new Frame{Origin=new[]{100.0,205,301},XAxis=new[]{0.0,0,1},YAxis=new[]{0.0,-1,0},MillimetersPerDrawingUnit=1000}};
+        BoundaryEditing.Replace(room,chosen);
+        var current=room.Boundary!.Frame;
+        Assert(Geometry.Outline(item).Select(current.ToWorld).Zip(cabinetWorld,(a,b)=>Distance(a,b)<1e-8).All(v=>v),"reselecting a rotated boundary preserves every cabinet world-space corner in a tilted meter drawing");
+        Assert(room.Obstacles[0].Points.Select(current.ToWorld).Zip(obstacleWorld,(a,b)=>Distance(a,b)<1e-8).All(v=>v) && room.Closures[0].Points.Select(current.ToWorld).Zip(closureWorld,(a,b)=>Distance(a,b)<1e-8).All(v=>v),"custom boundary reselection preserves actual obstacle and closure world positions");
+        Assert(Distance(current.ToWorld(room.DirtySeed!),dirty)<1e-8 && Distance(current.ToWorld(room.CleanSeed!),clean)<1e-8,"dirty and clean entrance seeds keep their real positions after reselection");
+        Assert(item.Id=="existing" && item.NativeHandle=="A1" && item.Locked && room.Placed.Count==1 && room.Boundary.NativeHandle=="CUSTOM","boundary changes retain existing managed block identity and lock state");
+        Assert(room.Stale && room.Candidates.Count==0 && !room.PreviewVisible,"explicit reselection invalidates old drafts instead of reusing a layout for another boundary");
+        string snapshot=Serialization.Write(room);var invalid=Serialization.Copy(chosen);invalid.Frame.Origin[0]+=1;
+        bool rejected=false;try{BoundaryEditing.Replace(room,invalid);}catch(ArgumentException){rejected=true;}
+        Assert(rejected && snapshot==Serialization.Write(room),"noncoplanar boundary reselection fails atomically without changing room state");
+        var clockwise=Make(RoomMode.FirstChange);var cabinet=new Placement{EquipmentId="LOCKER12",Position=new V2(1000,2000),Rotation=90};clockwise.Placed.Add(cabinet);
+        var before=Geometry.Outline(cabinet).Select(clockwise.Boundary!.Frame.ToWorld).ToArray();
+        var reverse=new Boundary{Width=15000,Height=12000,Frame=new Frame{Origin=new[]{0.0,12000,0},XAxis=new[]{1.0,0,0},YAxis=new[]{0.0,-1,0}}};
+        BoundaryEditing.Replace(clockwise,reverse);
+        Assert(Geometry.Outline(cabinet).Select(clockwise.Boundary!.Frame.ToWorld).Zip(before,(a,b)=>Distance(a,b)<1e-7).All(v=>v) && cabinet.ScaleX==1 && cabinet.ScaleY==1,"clockwise user rectangles do not mirror or rescale existing cabinets");
+        room.Candidates.Add(new Candidate{Items=new List<Placement>{Serialization.Copy(item)}});room.PreviewVisible=true;
+        var candidateWorld=Geometry.Outline(room.Candidates[0].Items[0]).Select(current.ToWorld).ToArray();
+        var shifted=Serialization.Copy(room.Boundary);shifted.Frame.Origin[1]+=1;
+        BoundaryEditing.Replace(room,shifted,false);
+        Assert(room.PreviewVisible && room.Candidates.Count==1 && Geometry.Outline(room.Candidates[0].Items[0]).Select(room.Boundary!.Frame.ToWorld).Zip(candidateWorld,(a,b)=>Distance(a,b)<1e-8).All(v=>v),"native boundary edits retain the preview world geometry while marking it stale");
+        var empty=new Room();BoundaryEditing.Replace(empty,new Boundary{Width=12000,Height=8000,NativeHandle="USER"});
+        Assert(empty.Boundary!.Width==12000 && empty.Boundary.Height==8000 && empty.Boundary.NativeHandle=="USER","a user's boundary is accepted directly without generating or accepting an area suggestion");
+    }
     static void AreaAndIdentificationChecks()
     {
         var project=Project.Create();
@@ -58,6 +98,7 @@ static class Program
     }
     static void Main(string[] args)
     {
+        BoundaryEditingChecks();
         AreaAndIdentificationChecks();
         var p=Project.Create();
         Assert(p.Rooms.Select(p.Population.For).SequenceEqual(new[]{600,300,150,300,150}),"three room populations 600/300/150");

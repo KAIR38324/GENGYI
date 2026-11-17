@@ -47,19 +47,15 @@ namespace Gengyi.Cad.AutoCAD2024
                     {
                         var id=Document.Database.GetObjectId(false,new Handle(Convert.ToInt64(boundary.NativeHandle,16)),0);
                         if(id.IsErased)throw new ArgumentException("所选房间边界已删除。");
-                        if(!(transaction.GetObject(id,OpenMode.ForRead) is Polyline pl) || !pl.Closed || pl.NumberOfVertices!=4 || Enumerable.Range(0,4).Any(i=>Math.Abs(pl.GetBulgeAt(i))>1e-9))
+                        if(!(transaction.GetObject(id,OpenMode.ForRead) is Polyline pl))
                             throw new ArgumentException("原生编辑后的边界不再是闭合直线矩形。");
-                        var a=pl.GetPoint3dAt(0);var x=pl.GetPoint3dAt(1)-a;var y=pl.GetPoint3dAt(3)-a;
-                        if(x.Length<1e-8 || y.Length<1e-8 || Math.Abs(x.GetNormal().DotProduct(y.GetNormal()))>1e-8 || (pl.GetPoint3dAt(2)-(a+x+y)).Length>1e-6)
-                            throw new ArgumentException("原生编辑后的房间边界不是有效矩形。");
-                        var frame=new Frame{Origin=CadGeometry.A(a),XAxis=CadGeometry.A(x.GetNormal()),YAxis=CadGeometry.A(y.GetNormal()),MillimetersPerDrawingUnit=boundary.Frame.MillimetersPerDrawingUnit};
-                        if(Serialization.Write(frame)!=Serialization.Write(boundary.Frame))
+                        var next=CadGeometry.ReadRectangle(pl,boundary.Frame.MillimetersPerDrawingUnit,boundary.Frame);
+                        if(Serialization.Write(next.Frame)!=Serialization.Write(boundary.Frame) || Math.Abs(next.Width-boundary.Width)>1e-6 || Math.Abs(next.Height-boundary.Height)>1e-6)
                         {
-                            if(room.DirtySeed!=null)room.DirtySeed=CadGeometry.Local(frame,CadGeometry.World(boundary.Frame,room.DirtySeed));
-                            if(room.CleanSeed!=null)room.CleanSeed=CadGeometry.Local(frame,CadGeometry.World(boundary.Frame,room.CleanSeed));
-                            room.Stale=true;
+                            string issue=room.ConstraintIssue;
+                            BoundaryEditing.Replace(room,next,false);
+                            room.ConstraintIssue=issue;
                         }
-                        boundary.Frame=frame;boundary.Width=x.Length*frame.MillimetersPerDrawingUnit;boundary.Height=y.Length*frame.MillimetersPerDrawingUnit;
                     }
                     catch(System.Exception ex) when(ex is ArgumentException || ex is Autodesk.AutoCAD.Runtime.Exception)
                     {room.ConstraintIssue=ex.Message;}

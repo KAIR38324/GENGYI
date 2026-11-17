@@ -46,6 +46,7 @@ namespace Gengyi.Cad.AutoCAD2024
             editor.WriteMessage("\nManaged API: " + typeof(CadApplication).Assembly.GetName().Version);
             editor.WriteMessage("\nPlugin target: .NETFramework,Version=v4.8");
             editor.WriteMessage("\nPlugin: " + typeof(EnvironmentCommands).Assembly.GetName().Version);
+            editor.WriteMessage("\nPlugin file: " + typeof(EnvironmentCommands).Assembly.Location);
             editor.WriteMessage("\nINSUNITS: " + document.Database.Insunits);
             editor.WriteMessage("\nUCS to WCS: " + editor.CurrentUserCoordinateSystem);
             if (!version.StartsWith("24.3", StringComparison.Ordinal))

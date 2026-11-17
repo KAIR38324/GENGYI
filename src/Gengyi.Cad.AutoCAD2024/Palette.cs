@@ -77,14 +77,14 @@ namespace Gengyi.Cad.AutoCAD2024
         internal Palette()
         {
             surface.Font=new Font("Microsoft YaHei UI",9F);boldFont=new Font(surface.Font,FontStyle.Bold);
-            palette=new PaletteSet("GENGYI · 更衣设施布置",new Guid("729EFC43-3F88-41D0-A63C-EA2D873EE988"))
+            palette=new PaletteSet("GENGYI · 更衣设施布置 v"+typeof(Palette).Assembly.GetName().Version?.ToString(3),new Guid("729EFC43-3F88-41D0-A63C-EA2D873EE988"))
             {MinimumSize=new Size(420,570),Size=new Size(470,920),Style=PaletteSetStyles.ShowCloseButton|PaletteSetStyles.ShowAutoHideButton|PaletteSetStyles.ShowPropertiesMenu};
             var header=new TableLayoutPanel{Dock=DockStyle.Top,AutoSize=true,ColumnCount=1,Padding=new Padding(14,12,14,8),BackColor=Color.White};
             var brand=Text("GENGYI  /  更衣设施布置",true);brand.Font=boldFont;Add(header,brand);Add(header,rooms);
             tips.SetToolTip(rooms,"每个房间分别保存自己的范围、方案和设备。切换前自动保存已改的人数参数。");
             var footer=new TableLayoutPanel{Dock=DockStyle.Bottom,AutoSize=true,ColumnCount=1,Padding=new Padding(14,9,14,7),BackColor=Color.FromArgb(229,236,249)};
             footerTitle.Font=boldFont;Add(footer,footerTitle);Add(footer,footerDetail);
-            nextStep=ActionButton("下一步 · 按建议尺寸定框",NextStep,true);Add(footer,nextStep);
+            nextStep=ActionButton("下一步 · 选择我的边界",NextStep,true);Add(footer,nextStep);
             surface.Controls.Add(tabs);surface.Controls.Add(footer);surface.Controls.Add(header);palette.Add("布置工作台",surface);
             var work=Page("布置");var edit=Page("设备与图块");var settings=Page("高级参数");
             workflowPage=(TabPage)work.Parent;
@@ -92,13 +92,14 @@ namespace Gengyi.Cad.AutoCAD2024
             var people=Card(work,"1  人数","鞋位和一更按在册人数；二更按当班人数。",boldFont);
             NumberRow(people,"在册人数",registered,"当班人数",shift);NumberRow(people,"男性比例 %",male,"项目备用 %",reserve);
             customRow=NumberRow(people,"当前自定义房人数",customPeople);Add(people,pendingInfo);inputError.ForeColor=Color.Firebrick;Add(people,inputError);
-            var area=Card(work,"2  先看面积和长宽","这是规划预估。先比较长宽，再到图中定范围。",boldFont);
+            var area=Card(work,"2  选择自己的边界 / 参考面积","自己的边界优先；面积与建议框只作规划参考。",boldFont);
+            existingRectangle=ActionButton("选择我画的矩形边界",()=>Queue("GYRECT Select"),true);Add(area,existingRectangle);
+            manualRectangle=ActionButton("手动点两个角确定范围",()=>Queue("GYRECT Corners"));Add(area,manualRectangle);
             areaSummary.Font=boldFont;Add(area,areaSummary);Add(area,rectangleChoices);Add(area,sketch);Add(area,areaDetail);
             var assumptionToggle=new LinkLabel{Text="查看估算条件",AutoSize=true,LinkColor=Blue,Margin=new Padding(0,0,0,6)};
             assumptionToggle.LinkClicked+=(_,__)=>{assumptions.Visible=!assumptions.Visible;assumptionToggle.Text=assumptions.Visible?"收起估算条件":"查看估算条件";};
             Add(area,assumptionToggle);assumptions.Visible=false;Add(area,assumptions);
-            suggested=ActionButton("按建议尺寸预览定框",StartSuggested,true);Add(area,suggested);
-            manualRectangle=ActionButton("手动点两个角",()=>Queue("GYRECT Corners"));existingRectangle=ActionButton("选已有矩形",()=>Queue("GYRECT Select"));ButtonRow(area,manualRectangle,existingRectangle);
+            suggested=ActionButton("按建议尺寸创建参考框",StartSuggested);Add(area,suggested);
             boundaryInfo.BackColor=Color.FromArgb(245,247,251);boundaryInfo.Padding=new Padding(8);Add(area,boundaryInfo);
             obstacles=CommandButton("门口 / 障碍", "GYOBSTACLES");seeds=CommandButton("入口 / 出口", "GYSEEDS");closures=CommandButton("实际封闭物", "GYCLOSURES");ButtonRow(area,obstacles,seeds,closures);
             tips.SetToolTip(obstacles,"选择门扇、门口、柱和不可占区的实际闭合轮廓。不会从截图猜测门位。");
@@ -242,11 +243,11 @@ namespace Gengyi.Cad.AutoCAD2024
                 areaSummary.Text=estimate.Options.Count==0?estimate.Message:$"目标 {estimate.Target} 人 · 参考房间 {estimate.Options.Min(o=>o.AreaM2):0.##}–{estimate.Options.Max(o=>o.AreaM2):0.##} ㎡";
                 assumptions.Text=estimate.Basis+"\r\n"+estimate.Assumptions+(estimate.Message.Length>0?"\r\n"+estimate.Message:"");
                 tips.SetToolTip(areaSummary,assumptions.Text);inputError.Text="";ShowSelectedEstimate();
-                nextStep.Enabled=lastSession?.Room.Boundary!=null || estimate.Options.Count>0;
+                nextStep.Enabled=lastSession!=null;
                 generate.Enabled=lastSession?.Room.Boundary!=null && lastSession.Room.ConstraintIssue.Length==0;
                 pendingInfo.Text=inputsDirty?"面积已按新输入更新，下一步操作会自动保存。":"修改人数会立即更新面积建议；操作前自动保存参数。";
                 pendingInfo.ForeColor=inputsDirty?Blue:Muted;
-                if(inputsDirty){footerTitle.Text=$"新目标 {estimate.Target} 人 · 原方案待重算";footerDetail.Text="面积建议已更新；生成方案时使用当前输入。";nextStep.Text=planningRoom?.Boundary==null?"下一步 · 按新人数建议定框":"下一步 · 按新人数生成方案";}
+                if(inputsDirty){footerTitle.Text=$"新目标 {estimate.Target} 人 · 原方案待重算";footerDetail.Text="面积建议已更新；生成方案时使用当前输入。";nextStep.Text=planningRoom?.Boundary==null?"下一步 · 选择我的边界":"下一步 · 按新人数生成方案";}
             }
             catch(System.Exception ex)
             {
@@ -257,7 +258,7 @@ namespace Gengyi.Cad.AutoCAD2024
         {
             var option=rectangleChoices.SelectedItem as RectangleEstimate;sketch.ShowPlan(option);
             areaDetail.Text=option==null?"":$"名义 {option.Nominal} 人位 · 设备投影 {option.ProjectionM2:0.##} ㎡\r\n预排包络；门柱、辅助设备、衣物与操作另核。";
-            suggested.Enabled=option!=null && lastSession!=null && lastSession.Room.Placed.Count==0;
+            suggested.Enabled=option!=null && lastSession!=null;
         }
         private bool Queue(string command)
         {
@@ -276,7 +277,7 @@ namespace Gengyi.Cad.AutoCAD2024
         private void NextStep()
         {
             if(!ApplyInputs())return;var s=lastSession;if(s==null)return;
-            if(s.Room.Boundary==null){StartSuggested();return;}
+            if(s.Room.Boundary==null){Queue("GYRECT Select");return;}
             if(s.Room.Stale || s.Room.Candidates.Count==0){Queue("GYGENERATE");return;}
             var selected=s.Room.Candidates[Math.Max(0,Math.Min(s.Room.SelectedCandidate,s.Room.Candidates.Count-1))];
             if(!s.Room.PreviewVisible){Queue(s.Room.Placed.Count>0?"GYCHECK":"GYPREVIEW");return;}
@@ -342,10 +343,10 @@ namespace Gengyi.Cad.AutoCAD2024
                 customRow.Visible=s.Room.Gender=="custom";customPeople.Enabled=s.Room.Gender=="custom";roomReserve.Enabled=reserveOverride.Checked;
                 shoeSettings.Visible=s.Room.Mode==RoomMode.Shoe;hangerSettings.Visible=s.Room.Mode==RoomMode.SecondChange;
                 var boundary=s.Room.Boundary;
-                boundaryInfo.Text=boundary==null?"尚未定范围 · 先按上面的建议定框，或选择已有矩形。":$"已定范围  {boundary.Width/1000:0.##} × {boundary.Height/1000:0.##} m  /  {boundary.Width*boundary.Height/1000000:0.##} ㎡";
-                if(s.Room.Placed.Count>0)boundaryInfo.Text+="\r\n本房间已有设备；要改范围请新建房间。";
+                boundaryInfo.Text=boundary==null?"尚未选边界 · 点击“选择我画的矩形边界”，到图中点选自己的闭合矩形。":$"已选边界  {boundary.Width/1000:0.##} × {boundary.Height/1000:0.##} m  /  {boundary.Width*boundary.Height/1000000:0.##} ㎡";
+                if(s.Room.Placed.Count>0)boundaryInfo.Text+="\r\n可重新选择边界；现有设备保持原位，随后重新校核。";
                 if(s.Room.ConstraintIssue.Length>0)boundaryInfo.Text+="\r\n"+s.Room.ConstraintIssue;
-                manualRectangle.Enabled=existingRectangle.Enabled=s.Room.Placed.Count==0;
+                manualRectangle.Enabled=existingRectangle.Enabled=true;
                 obstacles.Enabled=seeds.Enabled=closures.Enabled=boundary!=null;closures.Visible=s.Room.Mode==RoomMode.Shoe;generate.Enabled=boundary!=null && s.Room.ConstraintIssue.Length==0;
                 workflowHint.Text=boundary==null?"先确定房间范围，再生成方案。":s.Room.Stale?"人数、范围或现场条件已变化，请重新生成或检查方案。":"可生成不同方案；点选下面一项即可预览。";
                 string cs=string.Join(";",s.Room.Candidates.Select(c=>c.Id+":"+c.Family+":"+c.Statistics.Summary));
@@ -372,13 +373,12 @@ namespace Gengyi.Cad.AutoCAD2024
                 }
                 else{candidateDetail.Text="尚无方案。定范围后点击“生成布置方案”。";sourceInfo.Visible=false;rebuild.Visible=bind.Visible=false;}
                 nextStep.Enabled=true;
-                nextStep.Text=boundary==null?"下一步 · 按建议尺寸定框":s.Room.Stale || !hasCandidate?"下一步 · 生成布置方案":
+                nextStep.Text=boundary==null?"下一步 · 选择我的边界":s.Room.Stale || !hasCandidate?"下一步 · 生成布置方案":
                     !s.Room.PreviewVisible?(s.Room.Placed.Count>0?"检查已入图设备":"下一步 · 预览所选方案"):
                     rebuild.Visible?"下一步 · 建立设备图块（待比对）":commit.Enabled?"下一步 · 确认方案入图":"下一步 · 检查并修正方案";
                 var stats=s.Room.PreviewVisible && selected!=null?selected.Statistics:s.Room.Statistics;
                 SetStatistics(stats,s.Room.PreviewVisible?"所选方案预览":"已入图设备");
                 RefreshEstimate();
-                if(boundary==null && estimate?.Options.Count==0)nextStep.Enabled=false;
                 if(newSchemes && surface.IsHandleCreated)surface.BeginInvoke(new Action(()=>{tabs.SelectedTab=workflowPage;workflowPage.ScrollControlIntoView(schemeSection);}));
             }
             finally{updating=false;}

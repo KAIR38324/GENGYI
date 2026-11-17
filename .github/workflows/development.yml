@@ -24,8 +24,10 @@ jobs:
       - run: python -m pip install -r tools/requirements-checks.txt
       - run: python tools/dev.py check
       - run: python tools/dev.py package
+      - name: Stage directly extractable plugin folder
+        run: python -c "import shutil; shutil.copytree('artifacts/Gengyi.bundle', 'artifacts/download/Gengyi.bundle')"
       - uses: actions/upload-artifact@v4
         with:
           name: AutoCAD2024-three-room-plugin-${{ runner.os }}
-          path: artifacts/Gengyi.AutoCAD2024.zip
+          path: artifacts/download/
           if-no-files-found: error

@@ -63,9 +63,8 @@ namespace Gengyi.Cad.AutoCAD2024
         public void Rectangle()=>Run(s=>
         {
             NeedModelSpace(s);
-            if(s.Room.Placed.Count>0)throw new ArgumentException("本房间已有设备。请新建房间实例选择新边界，避免改变已放置设备的坐标基准。");
             var editor=s.Document.Editor;
-            string method=CadGeometry.Keyword(editor,"选择矩形方式：两角 / 已有矩形 / 建议尺寸","Corners Select Suggested","Corners");
+            string method=CadGeometry.Keyword(editor,"选择自己的矩形 / 手动两角 / 建议尺寸","Select Corners Suggested","Select");
             RectangleEstimate? suggestion=null;
             if(method=="Suggested")
             {
@@ -99,12 +98,7 @@ namespace Gengyi.Cad.AutoCAD2024
                 using(var tx=s.Document.Database.TransactionManager.StartOpenCloseTransaction())
                 {
                     var pl=(Polyline)tx.GetObject(pick.ObjectId,OpenMode.ForRead);
-                    if(!pl.Closed || pl.NumberOfVertices!=4 || Enumerable.Range(0,4).Any(i=>Math.Abs(pl.GetBulgeAt(i))>1e-9))throw new ArgumentException("边界必须是闭合四边直线矩形，不能含圆弧。");
-                    var a=pl.GetPoint3dAt(0);var x=pl.GetPoint3dAt(1)-a;var y=pl.GetPoint3dAt(3)-a;
-                    if(x.Length<1e-8 || y.Length<1e-8 || Math.Abs(x.GetNormal().DotProduct(y.GetNormal()))>1e-8 ||
-                        (pl.GetPoint3dAt(2)-(a+x+y)).Length>1e-6)throw new ArgumentException("所选多段线不是非零面积矩形。");
-                    boundary=new Boundary{Width=x.Length*units,Height=y.Length*units,Frame=new Frame{Origin=CadGeometry.A(a),XAxis=CadGeometry.A(x.GetNormal()),YAxis=CadGeometry.A(y.GetNormal()),MillimetersPerDrawingUnit=units}};
-                    boundary.NativeHandle=pl.Handle.ToString();
+                    boundary=CadGeometry.ReadRectangle(pl,units,s.Room.Boundary?.Frame);
                 }
             }
             else
@@ -117,7 +111,8 @@ namespace Gengyi.Cad.AutoCAD2024
                     Frame=new Frame{Origin=CadGeometry.A(origin),XAxis=CadGeometry.A(ucs.CoordinateSystem3d.Xaxis.GetNormal()),YAxis=CadGeometry.A(ucs.CoordinateSystem3d.Yaxis.GetNormal()),MillimetersPerDrawingUnit=units}};
             }
             if(boundary.Width<1 || boundary.Height<1)throw new ArgumentException("矩形长宽必须至少 1 mm。");
-            s.Preview.Clear();s.Edit(_=>{s.Room.Boundary=boundary;s.Room.ConstraintIssue="";s.Room.Candidates.Clear();s.Room.Obstacles.Clear();s.Room.Closures.Clear();s.Room.DirtySeed=null;s.Room.CleanSeed=null;});
+            s.Edit(_=>BoundaryEditing.Replace(s.Room,boundary));s.Preview.Clear();
+            if(s.Room.Placed.Count>0)editor.WriteMessage("\n边界已更换，已有设备的位置保持不变；原预览已清除，请重新生成或检查方案。");
             editor.WriteMessage($"\n{boundary.Width:0.###} × {boundary.Height:0.###} mm；面积 {boundary.Width*boundary.Height/1000000:0.###} ㎡。");
         });
         [CommandMethod("GENGYI","GYOBSTACLES",CommandFlags.Modal)]
