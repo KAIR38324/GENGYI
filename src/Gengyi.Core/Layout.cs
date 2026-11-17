@@ -68,14 +68,14 @@ namespace Gengyi.Core
         {
             string key = BlockMapping.For(p.EquipmentId, p.Length);
             p.MappingKey = ""; p.BlockName = ""; p.Provenance = "missing"; p.PhysicalOutline = null;
-            if (project.Mappings.TryGetValue(key, out var mapping))
+            if (project.Mappings.TryGetValue(key, out var mapping) && mapping.Accepts(p))
             {
                 p.MappingKey = mapping.Key.Length > 0 ? mapping.Key : key; p.BlockName = mapping.BlockName; p.Provenance = mapping.Provenance;
                 p.PhysicalOutline = mapping.PhysicalOutline == null ? null : Serialization.Copy(mapping.PhysicalOutline);
             }
         }
 
-        private static Placement Place(Room room, string id, double x, double y, double rotation = 0, double length = 0, string group = "")
+        internal static Placement Place(Room room, string id, double x, double y, double rotation = 0, double length = 0, string group = "")
         {
             var p = new Placement { RoomId = room.Id, EquipmentId = id, Position = new V2(x,y), Rotation = rotation,
                 Length = length, GroupId = group, CrossingEnabled = id == "S12" || id == "S18" || id == "S24" };
@@ -108,34 +108,9 @@ namespace Gengyi.Core
                             if (chain == null) continue;
                             foreach (bool stack in room.Options.AllowStacking ? new[] { false, true } : new[] { false })
                             {
-                                var c = new Candidate { Family = $"S形{rows}排/{connector}连接/{(vertical ? "竖" : "横")}{(stack ? "/局部叠放" : "")}" };
-                                string group = c.Id;
-                                for (int row = 0; row < rows; row++)
-                                {
-                                    double x = margin + 600, y = margin + row * (600 + connector);
-                                    foreach (int cap in chain)
-                                    {
-                                        c.Items.Add(Place(room, "S" + cap, x, y, group: group));
-                                        x += cap / 3 * 250;
-                                    }
-                                    if (row == rows - 1) continue;
-                                    bool right = row % 2 == 0;
-                                    double cx = right ? margin + 600 + run : margin + 600;
-                                    c.Items.Add(Place(room, "CORNER_R600", cx, y + 600, right ? 270 : 180, group: group));
-                                    c.Items.Add(Place(room, "S" + (connector * 12 / 1000), right ? cx + 600 : cx, y + 600, 90, group: group));
-                                    c.Items.Add(Place(room, "CORNER_R600", cx, y + 600 + connector, right ? 0 : 90, group: group));
-                                }
-                                if (stack)
-                                {
-                                    int nominal = c.Items.Sum(p => p.Equipment.Capacity);
-                                    // Keep single-height modules for crossing; stack only selected S24 groups.
-                                    foreach (var p in c.Items.Where(p => p.EquipmentId == "S24").Skip(1).Reverse())
-                                    {
-                                        if (nominal >= target) break;
-                                        p.EquipmentId = "S48"; p.CrossingEnabled = false; nominal += 24;
-                                    }
-                                    if (!c.Items.Any(p => p.EquipmentId == "S48")) continue;
-                                }
+                                var c = ShoeTemplate(room, rows, run, connector, chain, stack ? target : 0);
+                                c.Family += "/" + (vertical ? "竖" : "横");
+                                if (stack && !c.Items.Any(p => p.EquipmentId == "S48")) continue;
                                 if (vertical) RotateIntoBoundary(c, b.Width);
                                 yield return c;
                             }
@@ -143,6 +118,37 @@ namespace Gengyi.Core
                     }
                 }
             }
+        }
+
+        // Shared by pre-boundary area planning and the actual rectangle solver.
+        // R600 is the documented quarter-sector assumption, not an original block.
+        internal static Candidate ShoeTemplate(Room room, int rows, double run, int connector, List<int> chain, int stackedTarget = 0)
+        {
+            var c = new Candidate { Family = $"S形{rows}排/{connector}连接" };
+            double margin = room.Options.ShoeBoundaryMm;
+            for (int row = 0; row < rows; row++)
+            {
+                double x = margin + 600, y = margin + row * (600 + connector);
+                foreach (int cap in chain)
+                {
+                    c.Items.Add(Place(room, "S" + cap, x, y, group: c.Id));
+                    x += cap / 3 * 250;
+                }
+                if (row == rows - 1) continue;
+                bool right = row % 2 == 0;
+                double cx = right ? margin + 600 + run : margin + 600;
+                c.Items.Add(Place(room, "CORNER_R600", cx, y + 600, right ? 270 : 180, group: c.Id));
+                c.Items.Add(Place(room, "S" + (connector * 12 / 1000), right ? cx + 600 : cx, y + 600, 90, group: c.Id));
+                c.Items.Add(Place(room, "CORNER_R600", cx, y + 600 + connector, right ? 0 : 90, group: c.Id));
+            }
+            int nominal = c.Items.Sum(p => p.Equipment.Capacity);
+            foreach (var p in c.Items.Where(p => p.EquipmentId == "S24").Skip(1).Reverse())
+            {
+                if (nominal >= stackedTarget) break;
+                p.EquipmentId = "S48"; p.CrossingEnabled = false; nominal += 24;
+            }
+            if (c.Items.Any(p => p.EquipmentId == "S48")) c.Family += "/局部叠放";
+            return c;
         }
 
         private static IEnumerable<Candidate> Lockers(Room room, int target)

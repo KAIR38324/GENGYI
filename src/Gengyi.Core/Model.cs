@@ -196,6 +196,10 @@ namespace Gengyi.Core
         public List<V2>? LocalHooks { get; set; }
         public Dictionary<string, object> DynamicValues { get; set; } = new Dictionary<string, object>();
         public Dictionary<string, string> Attributes { get; set; } = new Dictionary<string, string>();
+        public bool Accepts(Placement item) => EquipmentId == item.EquipmentId &&
+            (item.EquipmentId != "HANGER_CUSTOM" || Math.Abs(Length-item.Length) <= .0005 &&
+                LocalHooks != null && item.LocalHooks != null && LocalHooks.Count == item.LocalHooks.Count &&
+                !LocalHooks.Where((p,i) => p.Distance(item.LocalHooks[i]) > .001).Any());
         public static string For(string equipmentId, double length) => equipmentId == "HANGER_CUSTOM"
             ? equipmentId + "@" + length.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) : equipmentId;
     }

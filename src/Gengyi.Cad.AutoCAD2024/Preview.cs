@@ -31,6 +31,7 @@ namespace Gengyi.Cad.AutoCAD2024
                         catch(ArgumentException){entity=CadGeometry.Polyline(Gengyi.Core.Geometry.Outline(item),session.Room.Boundary.Frame,1);}
                         entities.Add(entity);
                         TransientManager.CurrentTransientManager.AddTransient(entity,TransientDrawingMode.DirectShortTerm,128,new IntegerCollection());
+                        foreach(var text in Blocks.Labels(session.Document.Database,session.Room,item))Overlay(text);
                     }
                     transaction.Commit();
                 }
@@ -57,7 +58,7 @@ namespace Gengyi.Cad.AutoCAD2024
         private readonly IReadOnlyList<Placement> scene;
         private readonly V2 anchor;
         private V2 delta=new V2();
-        private readonly List<Polyline> lines=new List<Polyline>();
+        private readonly List<Entity> lines=new List<Entity>();
         private readonly System.Diagnostics.Stopwatch feedback=System.Diagnostics.Stopwatch.StartNew();
         internal V2 Delta=>delta;
         internal MoveJig(Session session,List<Placement> items,V2 anchor,IReadOnlyList<Placement>? scene=null)
@@ -91,6 +92,8 @@ namespace Gengyi.Cad.AutoCAD2024
                 var item=Serialization.Copy(original);item.Position+=delta;
                 var line=CadGeometry.Polyline(Gengyi.Core.Geometry.Outline(item),session.Room.Boundary!.Frame,3);
                 lines.Add(line);draw.Geometry.Draw(line);
+                foreach(var text in Blocks.Labels(session.Document.Database,session.Room,item))
+                {lines.Add(text);draw.Geometry.Draw(text);}
             }
             return true;
         }

@@ -38,7 +38,7 @@ namespace Gengyi.Cad.AutoCAD2024
             }
         }
         [CommandMethod("GENGYI","GYSETUP",CommandFlags.Modal)]
-        public void Setup()=>Run(s=>{if(Host.Panel==null)Host.Panel=new Palette();Host.Panel.Show(s);});
+        public void Setup()=>Run(s=>{Blocks.EnsureDescriptions(s);if(Host.Panel==null)Host.Panel=new Palette();Host.Panel.Show(s);});
         [CommandMethod("GENGYI","GYROOM",CommandFlags.Modal)]
         public void Switch()=>Run(s=>
         {
@@ -64,10 +64,35 @@ namespace Gengyi.Cad.AutoCAD2024
         {
             NeedModelSpace(s);
             if(s.Room.Placed.Count>0)throw new ArgumentException("本房间已有设备。请新建房间实例选择新边界，避免改变已放置设备的坐标基准。");
-            var editor=s.Document.Editor;double units=CadGeometry.Units(s.Document.Database,editor);
-            string method=CadGeometry.Keyword(editor,"选择矩形方式","Corners Select","Corners");
+            var editor=s.Document.Editor;
+            string method=CadGeometry.Keyword(editor,"选择矩形方式：两角 / 已有矩形 / 建议尺寸","Corners Select Suggested","Corners");
+            RectangleEstimate? suggestion=null;
+            if(method=="Suggested")
+            {
+                var estimate=AreaPlanning.Estimate(s.Project.Population,s.Room);
+                if(estimate.Options.Count==0)throw new ArgumentException(estimate.Message);
+                editor.WriteMessage("\n"+estimate.Basis+"\n"+estimate.Message);
+                for(int i=0;i<estimate.Options.Count;i++)editor.WriteMessage("\n"+(i+1)+". "+estimate.Options[i]);
+                var pick=editor.GetInteger(new PromptIntegerOptions("\n选择建议尺寸编号：")
+                    {DefaultValue=1,UseDefaultValue=true,AllowNegative=false,AllowZero=false,LowerLimit=1,UpperLimit=estimate.Options.Count});
+                if(pick.Status!=PromptStatus.OK)throw new Cancelled();
+                suggestion=estimate.Options[pick.Value-1];
+            }
+            double units=CadGeometry.Units(s.Document.Database,editor);
             Boundary boundary;
-            if(method=="Select")
+            if(suggestion!=null)
+            {
+                s.Preview.Clear();
+                using(var jig=new SuggestedRectangleJig(suggestion,editor.CurrentUserCoordinateSystem,units,s.Document.Database,s.Room.Options))
+                {
+                    PromptResult result;
+                    do{result=editor.Drag(jig);}while(result.Status==PromptStatus.Keyword);
+                    if(result.Status!=PromptStatus.OK)throw new Cancelled();
+                    boundary=jig.Boundary();
+                }
+                editor.WriteMessage("\n已采用预估尺寸；这一步只确定范围，接下来生成并校核实际候选。");
+            }
+            else if(method=="Select")
             {
                 var opt=new PromptEntityOptions("\n选择闭合四边直线矩形：");opt.SetRejectMessage("\n需要矩形多段线。");opt.AddAllowedClass(typeof(Polyline),true);
                 var pick=editor.GetEntity(opt);if(pick.Status!=PromptStatus.OK)throw new Cancelled();
@@ -165,7 +190,9 @@ namespace Gengyi.Cad.AutoCAD2024
             if(s.Room.Placed.Any(p=>p.Locked))throw new ArgumentException("当前房间含锁定设备，请先解锁后替换方案。");
             string action=s.Room.Placed.Count==0?"Replace":CadGeometry.Keyword(s.Document.Editor,"当前房间已有设备","Replace Append Cancel","Replace");
             if(action=="Cancel")throw new Cancelled();
-            if(chosen.Statistics.Effective==null && CadGeometry.Keyword(s.Document.Editor,"当前方案尚有待核项，是否作为待核草案入图","Yes No","No")!="Yes")throw new Cancelled();
+            int deficit=chosen.Statistics.Effective.HasValue?Math.Max(0,chosen.Statistics.Target-chosen.Statistics.Effective.Value):chosen.Statistics.ConditionalDeficit;
+            if((chosen.Statistics.Effective==null || deficit>0) && CadGeometry.Keyword(s.Document.Editor,
+                deficit>0?$"当前方案仍缺 {deficit} 人位，是否按容量不足的待核草案入图":"当前方案尚有待核项，是否作为待核草案入图","Yes No","No")!="Yes")throw new Cancelled();
             s.Edit(tx=>
             {
                 if(action=="Replace")
@@ -348,14 +375,11 @@ namespace Gengyi.Cad.AutoCAD2024
         });
         [CommandMethod("GENGYI","GYESTIMATE",CommandFlags.Modal)]public void Estimate()=>Run(s=>
         {
-            foreach(var r in s.Project.Rooms)
-            {
-                int target=s.Project.Population.For(r);string detail;
-                if(r.Mode==RoomMode.Shoe)detail=$"S24 {(target+23)/24}组，{(target+23)/24*48}格，直柜投影 {(target+23)/24*1.2:0.###}㎡；R600、活动空间与房间面积另核。";
-                else if(r.Mode==RoomMode.FirstChange)detail=$"12门柜 {(target+11)/12} 个，直柜投影 {(target+11)/12*.57:0.###}㎡，非房间面积。";
-                else detail=$"{target}挂位；单连续段规划长度 {(target==0?0:(target-1)*r.Options.HookPitchMm+r.Options.HookStartMarginMm+r.Options.HookEndMarginMm)}mm，端距为显式假设；多段各自扣端距。";
-                s.Document.Editor.WriteMessage("\n"+r.Name+" 目标"+target+"："+detail);
-            }
+            var estimate=AreaPlanning.Estimate(s.Project.Population,s.Room);
+            s.Document.Editor.WriteMessage("\n"+s.Room.Name+"："+estimate.Basis+"\n"+estimate.Message);
+            foreach(var option in estimate.Options)s.Document.Editor.WriteMessage("\n"+option+$"；名义{option.Nominal}人，设备投影{option.ProjectionM2:0.##}㎡");
+            s.Document.Editor.WriteMessage("\n"+estimate.Assumptions);
+            if(Host.Panel==null)Host.Panel=new Palette();Host.Panel.Show(s);
         });
         internal static void NeedModelSpace(Session s)
         {

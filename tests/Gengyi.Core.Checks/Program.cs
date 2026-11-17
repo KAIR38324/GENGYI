@@ -10,8 +10,55 @@ static class Program
     static void Assert(bool value, string message) { if (!value) throw new Exception(message); passed++; Console.WriteLine("PASS " + message); }
     static Room Make(RoomMode mode, double w=15000, double h=12000) => new Room
     { Id="test", Mode=mode, Boundary=new Boundary { Width=w,Height=h } };
+    static void AreaAndIdentificationChecks()
+    {
+        var project=Project.Create();
+        string original=Serialization.Write(project);
+        foreach(var mode in new[]{RoomMode.Shoe,RoomMode.FirstChange,RoomMode.SecondChange})
+        {
+            var room=project.Rooms.First(r=>r.Mode==mode);
+            var estimate=AreaPlanning.Estimate(project.Population,room);
+            Assert(room.Boundary==null && estimate.Options.Count>=2 && estimate.Options.All(o=>o.Nominal>=estimate.Target && o.AreaM2>o.ProjectionM2),mode+" offers room dimensions before a boundary exists, separate from equipment projection");
+            Assert(estimate.Options.All(o=>
+            {
+                var envelope=Geometry.RoomPolygon(new Boundary{Width=o.WidthMm,Height=o.HeightMm});
+                var union=Geometry.Union(o.Items.Select(Geometry.Footprint));
+                return envelope.Covers(union) && Math.Abs(union.Area-o.Items.Sum(i=>Geometry.Footprint(i).Area))<Geometry.AreaTolerance;
+            }),mode+" estimates contain real-size equipment without overlapping or leaving the envelope");
+            Assert(estimate.Options.Select(o=>o.ToString()).SequenceEqual(AreaPlanning.Estimate(project.Population,room).Options.Select(o=>o.ToString())),mode+" palette options and suggested rectangle command have deterministic ordering");
+        }
+        Assert(Serialization.Write(project)==original,"pre-boundary area preview does not alter room state or create a candidate");
+        var shoes=project.Rooms[0];
+        var shoeEstimate=AreaPlanning.Estimate(project.Population,shoes);
+        Assert(shoeEstimate.Options.Any(o=>Math.Abs(o.WidthMm-10700)<.01 && Math.Abs(o.HeightMm-10600)<.01 && Math.Abs(o.AreaM2-113.42)<.001 && o.Nominal==600),"600-person estimate reproduces documented 6-row R600 planning template");
+        Assert(shoeEstimate.Options.Any(o=>o.Items.Any(p=>p.EquipmentId=="S48") && o.Items.Any(p=>p.Equipment.IsShoe && p.CrossingEnabled)),"stacked estimate retains explicit low-cabinet crossing locations");
+        shoes.Options.ShoeCapacities=new List<int>{18};shoes.Options.AllowStacking=false;
+        Assert(AreaPlanning.Estimate(project.Population,shoes).Options.All(o=>o.Items.Where(i=>i.Equipment.IsShoe).All(i=>i.EquipmentId=="S18")),"area preview respects allowed real shoe modules and stacking opt-out");
+        shoes.Options.PlanningAisleMm=2500;
+        Assert(AreaPlanning.Estimate(project.Population,shoes).Options.Count==0,"unsupported shoe connector clearance produces an explanation instead of undersized dimensions");
+        project=Project.Create();var second=project.Rooms.First(r=>r.Mode==RoomMode.SecondChange);
+        second.Options.HangerMaxSegmentMm=350;second.Options.HookStartMarginMm=80;second.Options.HookEndMarginMm=80;
+        var segmented=AreaPlanning.Estimate(project.Population,second);
+        Assert(segmented.Target==150 && segmented.Options.All(o=>o.Items.Count==75 && o.Nominal==150 && Math.Abs(o.Items.Sum(i=>i.Length)-19500)<.01),"hanging area estimates account for endpoint losses on each short segment");
+        second.ReserveOverride=.1m;
+        Assert(AreaPlanning.Estimate(project.Population,second).Target==165 && AreaPlanning.Estimate(project.Population,project.Rooms[0]).Target==600,"area preview uses per-room population and reserve rules");
+        project.Population=new Population{Registered=0,Shift=0};
+        Assert(AreaPlanning.Estimate(project.Population,second).Options.Count==0,"zero-person room does not suggest a misleading nonzero minimum area");
+        var single=EquipmentPresentation.Describe(new Placement{EquipmentId="S24"},new LayoutOptions());
+        var stacked=EquipmentPresentation.Describe(new Placement{EquipmentId="S48"},new LayoutOptions());
+        Assert(single.Title.Contains("24人") && single.Structure.Contains("每侧3层") && single.Detail.Contains("48格") && stacked.Title.Contains("48人") && stacked.Structure.Contains("上下2柜") && stacked.Structure.Contains("每侧6层") && stacked.Detail.Contains("1200mm"),"shoe labels distinguish people, physical cells, per-side levels and stacked height");
+        var frozen=new Placement{EquipmentId="HANGER_CUSTOM",Length=1000,LocalHooks=new List<V2>{new V2(50,225),new V2(150,225)}};
+        Assert(EquipmentPresentation.Describe(frozen,new LayoutOptions()).Title.Contains("2挂位") && EquipmentPresentation.Describe(new Placement{EquipmentId="LOCKER12"},new LayoutOptions()).Structure.Contains("4层"),"equipment identification follows actual hook inventory and locker storage levels");
+        var hookMapping=new BlockMapping{EquipmentId="HANGER_CUSTOM",Length=1000,LocalHooks=Serialization.Copy(frozen.LocalHooks),Key="hanging-source",BlockName="original-hooks",Provenance="original_cad"};
+        Assert(hookMapping.Accepts(frozen) && !hookMapping.Accepts(new Placement{EquipmentId="HANGER_CUSTOM",Length=1000,LocalHooks=new List<V2>{new V2(100,225),new V2(200,225)}}),"same-length hanger source must match physical hook positions, not only a mapping alias");
+        project.Mappings[BlockMapping.For("HANGER_CUSTOM",1000)]=hookMapping;
+        var incompatible=new Placement{EquipmentId="HANGER_CUSTOM",Length=1000,LocalHooks=new List<V2>{new V2(100,225),new V2(200,225)}};
+        Layout.ResolveMapping(project,incompatible);
+        Assert(incompatible.MappingKey=="" && incompatible.Provenance=="missing","incompatible source stays unbound until a matching block is explicitly connected or reconstructed");
+    }
     static void Main(string[] args)
     {
+        AreaAndIdentificationChecks();
         var p=Project.Create();
         Assert(p.Rooms.Select(p.Population.For).SequenceEqual(new[]{600,300,150,300,150}),"three room populations 600/300/150");
         p.ChangePopulation(new Population{Registered=601,Shift=301});
