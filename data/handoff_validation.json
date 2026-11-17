@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-17",
+  "scope": "handoff_package_not_finished_CAD_plugin",
+  "source_images": 10,
+  "original_native_blocks_available": false,
+  "reference_tests": {
+    "command": "python -m unittest discover -s tests -v",
+    "passed": 16,
+    "failed": 0
+  },
+  "json_parse": "pass",
+  "markdown_local_links": "pass",
+  "original_image_sha256": "pass",
+  "host_cad_test": "not_run_no_CAD_plugin_built",
+  "topology_solver": "specified_not_implemented",
+  "source_block_visual_verification": "pending_local_original_CAD",
+  "reference_estimates": "not_validated_layouts",
+  "json_schema_structure": "pass",
+  "independent_review": "performed; zero-length hook, optional rotation mode and three-room requirements checked",
+  "first_release_modes": [
+    "shoe",
+    "first_change",
+    "second_change"
+  ],
+  "room_switching": "specified_not_implemented"
+}

@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "updated_local_date": "2026-11-17",
+  "units": "mm",
+  "registered_people": 600,
+  "peak_shift_people": 300,
+  "shifts": 2,
+  "sex_ratio": {
+    "male": 0.5,
+    "female": 0.5
+  },
+  "shoe_allocation_basis": "registered_people",
+  "first_change_allocation_basis": "registered_people",
+  "second_change_allocation_basis": "peak_shift_people",
+  "reserve_ratio": 0.0,
+  "optional_historical_reserve_ratio": 0.1,
+  "boundary_clearance_mm": 1000,
+  "boundary_clearance_mode": "minimum_and_preferred_snap",
+  "boundary_exceptions": [],
+  "ordinary_row_clearance_mm": null,
+  "row_clearance_source": "actual_connection_geometry",
+  "allowed_skus": [
+    "S12",
+    "S18",
+    "S24",
+    "S48"
+  ],
+  "stacking_enabled": true,
+  "stacking_policy": "storage_capacity_separate_from_crossing_eligibility",
+  "default_layout_family": "original_S_shape",
+  "orthogonal_drag_default": true,
+  "allowed_rotations_deg": [
+    0,
+    90,
+    180,
+    270
+  ],
+  "entry_seed": null,
+  "clean_exit_seed": null,
+  "end_closure_status": "requires_geometry_or_explicit_design_definition",
+  "hygiene_validation_initial": "unverified",
+  "original_block_source_status": "missing",
+  "showers": false,
+  "drawing_space": "model",
+  "extra_hatch": false,
+  "flow_project_context": {
+    "staff_entry": "upper_right",
+    "normal_process_direction": "right_to_left",
+    "workshop_side": "south",
+    "vip_entry": "north",
+    "knife_exit": "south"
+  },
+  "footnote": "项目默认参数，不替代原始块和矩形内实际可用性校核",
+  "required_first_release_room_modes": [
+    "shoe",
+    "first_change",
+    "second_change"
+  ],
+  "default_room_instances": [
+    "shoe_shared",
+    "male_first",
+    "female_first",
+    "male_second",
+    "female_second"
+  ],
+  "room_state_isolation": true,
+  "shoe_boundary_rule_applies_to_other_modes": false
+}

@@ -1,0 +1,349 @@
+{
+  "schema_version": "1.0",
+  "units": "mm",
+  "equipment": [
+    {
+      "id": "S12",
+      "kind": "shoe_cabinet",
+      "name": "12人双面鞋柜",
+      "dimensions_mm": {
+        "length": 1000,
+        "depth": 600,
+        "height": 600
+      },
+      "people_capacity_nominal": 12,
+      "cells_total": 24,
+      "sides": 2,
+      "columns_per_side_per_box": 4,
+      "cells_vertical_per_box": 3,
+      "boxes_stacked": 1,
+      "nominal_cell_allocation_mm": [
+        250,
+        300,
+        200
+      ],
+      "net_cell_dimensions_mm": null,
+      "can_be_default_crossing_segment": true,
+      "crossing_requires_validation": true,
+      "capacity_requires_access_to_both_faces": true,
+      "dimension_evidence": "derived_custom",
+      "sources": [
+        "references/original_images/05-1794325039166.png",
+        "user_2026-11-17_latest"
+      ],
+      "cad_block_provenance": "missing"
+    },
+    {
+      "id": "S18",
+      "kind": "shoe_cabinet",
+      "name": "18人双面鞋柜",
+      "dimensions_mm": {
+        "length": 1500,
+        "depth": 600,
+        "height": 600
+      },
+      "people_capacity_nominal": 18,
+      "cells_total": 36,
+      "sides": 2,
+      "columns_per_side_per_box": 6,
+      "cells_vertical_per_box": 3,
+      "boxes_stacked": 1,
+      "nominal_cell_allocation_mm": [
+        250,
+        300,
+        200
+      ],
+      "net_cell_dimensions_mm": null,
+      "can_be_default_crossing_segment": true,
+      "crossing_requires_validation": true,
+      "capacity_requires_access_to_both_faces": true,
+      "dimension_evidence": "derived_custom",
+      "sources": [
+        "references/original_images/05-1794325039166.png",
+        "user_2026-11-17_latest"
+      ],
+      "cad_block_provenance": "missing"
+    },
+    {
+      "id": "S24",
+      "kind": "shoe_cabinet",
+      "name": "24人双面鞋柜",
+      "dimensions_mm": {
+        "length": 2000,
+        "depth": 600,
+        "height": 600
+      },
+      "people_capacity_nominal": 24,
+      "cells_total": 48,
+      "sides": 2,
+      "columns_per_side_per_box": 8,
+      "cells_vertical_per_box": 3,
+      "boxes_stacked": 1,
+      "nominal_cell_allocation_mm": [
+        250,
+        300,
+        200
+      ],
+      "net_cell_dimensions_mm": null,
+      "can_be_default_crossing_segment": true,
+      "crossing_requires_validation": true,
+      "capacity_requires_access_to_both_faces": true,
+      "dimension_evidence": "confirmed",
+      "sources": [
+        "references/original_images/05-1794325039166.png",
+        "user_2026-11-17_latest"
+      ],
+      "cad_block_provenance": "missing"
+    },
+    {
+      "id": "S48",
+      "kind": "shoe_cabinet",
+      "name": "48人双面鞋柜",
+      "dimensions_mm": {
+        "length": 2000,
+        "depth": 600,
+        "height": 1200
+      },
+      "people_capacity_nominal": 48,
+      "cells_total": 96,
+      "sides": 2,
+      "columns_per_side_per_box": 8,
+      "cells_vertical_per_box": 3,
+      "boxes_stacked": 2,
+      "nominal_cell_allocation_mm": [
+        250,
+        300,
+        200
+      ],
+      "net_cell_dimensions_mm": null,
+      "can_be_default_crossing_segment": false,
+      "crossing_requires_validation": true,
+      "capacity_requires_access_to_both_faces": true,
+      "dimension_evidence": "derived_stack",
+      "sources": [
+        "references/original_images/05-1794325039166.png",
+        "user_2026-11-17_latest"
+      ],
+      "cad_block_provenance": "missing"
+    },
+    {
+      "id": "CORNER_R600",
+      "kind": "corner",
+      "name": "四分之一圆弧转角",
+      "radius_mm": 600,
+      "radius_definition": "not_specified_inner_outer_or_centerline",
+      "height_mm": 600,
+      "nominal_people_capacity": 0,
+      "cad_block_provenance": "missing",
+      "sources": [
+        "references/original_images/05-1794325039166.png",
+        "references/original_images/02-18753.jpg"
+      ]
+    },
+    {
+      "id": "LOCKER12",
+      "kind": "personal_locker",
+      "name": "一更12门衣柜",
+      "dimensions_mm": {
+        "length": 1140,
+        "depth": 500,
+        "height": 2095
+      },
+      "people_capacity_nominal": 12,
+      "columns": 3,
+      "levels": 4,
+      "compartments_per_person": 1,
+      "door_opening_geometry": "from_original_block_or_product_drawing",
+      "sources": [
+        "references/original_images/07-1794325063428.png"
+      ]
+    },
+    {
+      "id": "HANGER_CUSTOM",
+      "kind": "garment_hanger",
+      "name": "二更工装衣架",
+      "length_mm": null,
+      "horizontal_tube_length_mm": 450,
+      "vertical_tube_length_mm_excluding_bolt": 650,
+      "hook_length_mm": 50,
+      "hook_diameter_mm": 4,
+      "hook_pitch_mm": 100,
+      "tube_outer_diameter_mm": 25,
+      "tube_wall_mm": 2,
+      "material": "304 stainless steel",
+      "anchor_bolt": "M10",
+      "anchor_bolt_length_mm_approx": 100,
+      "referenced_ceiling_panel_mm": 50,
+      "installation_elevation_mm": null,
+      "end_margin_mm": null,
+      "count_hook_lines_default": 1,
+      "hook_line_count_is_verified": false,
+      "sources": [
+        "references/original_images/08-1794325072598.png"
+      ]
+    },
+    {
+      "id": "CUP100",
+      "kind": "cup_cabinet",
+      "name": "茶水柜/茶杯柜",
+      "dimensions_mm": {
+        "length": 1500,
+        "depth": 150,
+        "height": 1800
+      },
+      "cup_positions": 100,
+      "material": "304 stainless steel, 1.0 mm",
+      "sources": [
+        "references/original_images/06-1794325050916.png"
+      ]
+    },
+    {
+      "id": "HANDWASH5",
+      "kind": "handwash_sink",
+      "name": "五位洗手池",
+      "dimensions_mm": {
+        "length": 1900,
+        "depth": 475,
+        "height": 1110
+      },
+      "nominal_taps": 5,
+      "actual_adult_positions": null,
+      "supply": "DN15",
+      "drain": "DN32",
+      "power_w": 150,
+      "sources": [
+        "references/original_images/09-1794325085750.png"
+      ]
+    },
+    {
+      "id": "BOOTWASH3",
+      "kind": "boot_wash",
+      "name": "三位洗靴机",
+      "dimensions_mm": {
+        "length": 1870,
+        "depth": 615,
+        "height": 950
+      },
+      "nominal_positions": 3,
+      "drain_original_table": "DN32",
+      "drain_yellow_revision": "DN50",
+      "supply": "DN15",
+      "brush_diameter_mm": 140,
+      "brush_length_mm": 260,
+      "brush_inclination_deg_max_exclusive": 10,
+      "foot_step_height_mm": 300,
+      "sources": [
+        "references/original_images/10-1794325096089.png"
+      ]
+    },
+    {
+      "id": "BOOTDRY20",
+      "kind": "boot_dryer",
+      "name": "20人烘靴柜",
+      "nominal_pairs": 20,
+      "dimensions_mm": null,
+      "power_w": 1200,
+      "voltage_v": 220,
+      "integrated_disinfection_and_exhaust": true,
+      "dimension_evidence": "not_given_in_user_source",
+      "sources": [
+        "references/original_images/04-1794325020493.png"
+      ]
+    },
+    {
+      "id": "CHANGING_MIRROR",
+      "kind": "wall_mirror",
+      "name": "更衣镜",
+      "width_mm": 1400,
+      "height_mm": 1600,
+      "bottom_elevation_mm": 600,
+      "plan_projection_depth_mm": null,
+      "applies_to_room_modes": [
+        "second_change"
+      ],
+      "sources": [
+        "references/original_images/04-1794325020493.png"
+      ],
+      "capacity_people_nominal": 0
+    },
+    {
+      "id": "UV_DEVICE",
+      "kind": "uv_disinfection_fixture",
+      "name": "二更紫外灯",
+      "mounting_elevation_mm": 2200,
+      "voltage_v": 220,
+      "power_w": 15,
+      "dimensions_mm": null,
+      "applies_to_room_modes": [
+        "second_change"
+      ],
+      "sources": [
+        "references/original_images/04-1794325020493.png"
+      ],
+      "capacity_people_nominal": 0,
+      "operating_control": "按实际设备及消毒方式配置，不作为普通照明默认开启"
+    },
+    {
+      "id": "SHOE_ARCHIVE",
+      "kind": "archive_cabinet",
+      "name": "换鞋间档案柜",
+      "dimensions_mm": {
+        "length": 900,
+        "depth": 300,
+        "height": 2200
+      },
+      "applies_to_room_modes": [
+        "shoe"
+      ],
+      "sources": [
+        "references/original_images/04-1794325020493.png"
+      ],
+      "people_capacity_nominal": 0
+    },
+    {
+      "id": "SHOE_DESK",
+      "kind": "desk",
+      "name": "换鞋间办公桌",
+      "dimensions_mm": {
+        "length": 1200,
+        "depth": 450,
+        "height": 760
+      },
+      "applies_to_room_modes": [
+        "shoe"
+      ],
+      "sources": [
+        "references/original_images/04-1794325020493.png"
+      ],
+      "people_capacity_nominal": 0
+    },
+    {
+      "id": "SHOE_WATERHEATER",
+      "kind": "water_heater",
+      "name": "换鞋间热水器",
+      "dimensions_mm": null,
+      "applies_to_room_modes": [
+        "shoe"
+      ],
+      "sources": [
+        "references/original_images/04-1794325020493.png"
+      ],
+      "people_capacity_nominal": 0
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "SHOE_DOOR_WIDTH_CONFLICT",
+      "source_door_size_mm": [
+        260,
+        168
+      ],
+      "derived_column_pitch_mm": 250,
+      "resolution": "最新8列和2000外形用于名义模数；门及内净加工尺寸待核，不能据此生产",
+      "sources": [
+        "references/original_images/05-1794325039166.png",
+        "user_2026-11-17_latest"
+      ]
+    }
+  ]
+}

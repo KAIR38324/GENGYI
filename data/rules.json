@@ -1,0 +1,121 @@
+{
+  "schema_version": "1.0",
+  "rules": [
+    {
+      "id": "CAP001",
+      "severity": "hard",
+      "rule": "双侧共48格的S24仅服务24人，一人固定脏净配对两格",
+      "basis": "latest_user"
+    },
+    {
+      "id": "CAP002",
+      "severity": "hard",
+      "rule": "名义已装、经验证有效、已分配、仍缺人数分别统计",
+      "basis": "engineering_derived"
+    },
+    {
+      "id": "GEO001",
+      "severity": "hard",
+      "rule": "柜体实体不重叠；横竖连接不得重复计容",
+      "basis": "engineering_derived"
+    },
+    {
+      "id": "GEO002",
+      "severity": "hard",
+      "rule": "其他边界柜最小净距1000，优先等于1000；例外须显式",
+      "basis": "latest_user"
+    },
+    {
+      "id": "GEO003",
+      "severity": "hard",
+      "rule": "横竖均可用12/18/24柜控制间距，实际净距由接法计算",
+      "basis": "latest_user"
+    },
+    {
+      "id": "GEO004",
+      "severity": "hard",
+      "rule": "原R600圆弧角件保留，未证实储物功能前容量0",
+      "basis": "source_image_and_derived"
+    },
+    {
+      "id": "HYG001",
+      "severity": "hard",
+      "rule": "禁止正常步行从脏侧绕端进入净侧",
+      "basis": "latest_user"
+    },
+    {
+      "id": "HYG002",
+      "severity": "hard",
+      "rule": "指定跨柜转换边加入后流程应可达，双层不自动生成跨柜边",
+      "basis": "engineering_derived"
+    },
+    {
+      "id": "OPS001",
+      "severity": "hard",
+      "rule": "被遮挡格口、不可达操作面不计有效容量",
+      "basis": "engineering_derived"
+    },
+    {
+      "id": "BLK001",
+      "severity": "hard",
+      "rule": "块来源分original_cad/image_reconstructed/legacy_generated/missing，不能冒认",
+      "basis": "latest_user"
+    },
+    {
+      "id": "BLK002",
+      "severity": "hard",
+      "rule": "12/18人按列模数派生，不允许非等比压缩整个24人块",
+      "basis": "engineering_derived"
+    },
+    {
+      "id": "UI001",
+      "severity": "hard",
+      "rule": "默认正交拖动，候选切换，修改后实时数量与缺口",
+      "basis": "latest_user"
+    },
+    {
+      "id": "UI002",
+      "severity": "hard",
+      "rule": "取消无残留，入图支持撤销，原生CAD编辑触发重算",
+      "basis": "engineering_derived"
+    },
+    {
+      "id": "AREA001",
+      "severity": "hard",
+      "rule": "柜投影、柜阵包络、有效使用面积、房间总面积分开",
+      "basis": "engineering_derived"
+    },
+    {
+      "id": "CFG001",
+      "severity": "default",
+      "rule": "备用率0，10%仅显式选项；在册600与当班300分开",
+      "basis": "current_project"
+    },
+    {
+      "id": "SRC001",
+      "severity": "unresolved",
+      "rule": "柜门260宽与250列模数冲突，净格与制作尺寸待核",
+      "basis": "source_conflict"
+    },
+    {
+      "id": "SRC002",
+      "severity": "unresolved",
+      "rule": "原始CAD块及R600内外半径定义尚缺，本地导入解决",
+      "basis": "source_missing"
+    },
+    {
+      "id": "ROOM001",
+      "severity": "hard",
+      "rule": "首版三模式（换鞋/一更/二更）均须自动候选、拖动、落图和统计；房间实例切换状态独立",
+      "basis": "latest_user_followup_2026-11-17"
+    }
+  ],
+  "validation_states": [
+    "not_run",
+    "pass",
+    "fail",
+    "requires_input",
+    "approximate_only"
+  ],
+  "policy": "未执行/缺输入不能标pass；旧图已通过的检查也不能跨范围继承"
+}

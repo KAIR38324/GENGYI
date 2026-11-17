@@ -1,6 +1,6 @@
 # GENGYI｜CAD 更衣设施一键布置插件开发交接
 
-以用户原方案的 **S 形双面换鞋柜** 为首个完整功能，支持人数估算、矩形内多方案排布、默认正交拖动、实时容量统计，并逐步扩展至一更衣柜和二更工装衣架。
+首版完整支持 **换鞋间、一更、二更三种房间模式**，可在男女子房间间切换。依据原方案分别布置 S 形双面鞋柜、12门个人衣柜和工装衣架，支持人数估算、矩形内多方案、默认正交拖动及各房间独立实时统计。
 
 **本仓库当前交付的是原始证据、工程规则、参考计算器和本地 Codex 开发任务；尚不是已完成的 CAD 插件。** 原方案 10 张图片已按原字节归档。尚无用户原始 DWG/DXF 块定义；本地开发时可直接在用户 CAD 中导入原块，算法与交互开发无需因此停工。
 
@@ -8,7 +8,7 @@
 
 把下列文字交给已打开本仓库的本地 Codex：
 
-> 请先读 `AGENTS.md`、`prompts/LOCAL_CODEX_START.md` 和 `docs/00_REQUIREMENTS.md`，查看 `references/original_images` 的原始图片，再按交接任务开发可在我的 CAD 中实际使用的更衣柜一键布置插件。先识别本机 CAD 品牌、完整版本和可用 SDK；已有规则不用重复询问。先完成双面鞋柜的 S 形排布、原图块接入、拖动和实时统计，再扩展一更与二更。仓库中的旧 F-R3 图纸是已被用户否定图块的反例，不得当作原图块库。持续开发、验证并报告真实完成状态。
+> 请先读 `AGENTS.md`、`prompts/LOCAL_CODEX_START.md` 和 `docs/00_REQUIREMENTS.md`，查看 `references/original_images` 的原始图片，再按交接任务开发可在我的 CAD 中实际使用的更衣柜一键布置插件。先识别本机 CAD 品牌、完整版本和可用 SDK；已有规则不用重复询问。首版完成换鞋间、一更、二更的房间切换、各自自动排布、原图块接入、拖动和实时统计。仓库中的旧 F-R3 图纸是已被用户否定图块的反例，不得当作原图块库。持续开发、验证并报告真实完成状态。
 
 完整任务：[LOCAL_CODEX_START.md](prompts/LOCAL_CODEX_START.md)。
 
@@ -47,8 +47,10 @@
 | [04_CAD_PLUGIN_ARCHITECTURE](docs/04_CAD_PLUGIN_ARCHITECTURE.md) | 本地 CAD 插件架构和交互 |
 | [05_ACCEPTANCE_TESTS](docs/05_ACCEPTANCE_TESTS.md) | 可执行验收清单 |
 | [06_LEGACY_REVIEW](docs/06_LEGACY_REVIEW.md) | 历次错误及回归依据 |
+| [07_ROOM_MODES](docs/07_ROOM_MODES.md) | 首版三种房间模式、男女切换与独立状态 |
 | [设备目录](data/equipment_catalog.json) | 机器可读参数及证据级别 |
 | [项目默认值](data/project_defaults.json) | 最新人数、边界、交互及容量口径 |
+| [房间模式](data/room_modes.json) | 三种算法、五个默认房间与独立参数 |
 | [规则清单](data/rules.json) | 有编号的硬约束、假设与校核状态 |
 | [参考计算器](tools/reference_calculations.py) | 纯 Python 零依赖模数/容量/估算参考 |
 | [原块映射模板](data/block_mapping.template.json) | 本地原图块接入与来源状态 |

@@ -1,0 +1,390 @@
+{
+  "schema_version": "1.0",
+  "updated_local_date": "2026-11-17",
+  "scope": "mandatory_complete_v1_room_modes",
+  "units": "mm",
+  "equipment_catalog": "equipment_catalog.json",
+  "shared_project_defaults": "project_defaults.json",
+  "override_policy": {
+    "mode_specific_rule_overrides_shared_shoe_defaults": true,
+    "do_not_apply_global_boundary_clearance_to_non_shoe_modes": true,
+    "do_not_apply_global_shoe_skus_or_S_topology_to_non_shoe_modes": true,
+    "new_user_room_mode_requirement_overrides_legacy_future_extension_wording": true
+  },
+  "population_rules": {
+    "registered_people": 600,
+    "peak_shift_people": 300,
+    "male_ratio": 0.5,
+    "female_ratio": 0.5,
+    "male_rounding": "floor(total * male_ratio + 0.5)",
+    "female_rounding": "total - male",
+    "preserve_base_total": true,
+    "reserve_ratio_default": 0.0,
+    "reserve_ratio_historical_optional": 0.1,
+    "reserve_rounding": "ceil(room_base_people * (1 + room_reserve_ratio))",
+    "reserve_is_applied_after_gender_split": true,
+    "changing_project_population_preserves_geometry_and_marks_affected_rooms_stale": true
+  },
+  "mode_definitions": [
+    {
+      "mode_id": "shoe",
+      "display_name": "换鞋间",
+      "implementation_phase": "v1_required",
+      "population_basis": "registered_people_total",
+      "capacity_unit": "paired_dirty_clean_shoe_cells",
+      "core_equipment_ids": [
+        "S12",
+        "S18",
+        "S24",
+        "S48",
+        "CORNER_R600"
+      ],
+      "optional_auxiliary_equipment_ids": [
+        "CUP100",
+        "SHOE_ARCHIVE",
+        "SHOE_DESK",
+        "SHOE_WATERHEATER"
+      ],
+      "layout_families": [
+        "original_S_shape",
+        "mixed_module_S_shape",
+        "partial_stacked_S_shape"
+      ],
+      "boundary_rule": {
+        "standard_cabinet_clearance_mm": 1000,
+        "relation": "minimum_and_preferred_snap",
+        "exceptions": [],
+        "requires_explicit_end_closure_geometry": true
+      },
+      "capacity_rules": {
+        "two_cells_per_person": true,
+        "validity_requires_both_faces_accessible": true,
+        "storage_capacity_separate_from_crossing_eligibility": true,
+        "nominal_corner_capacity": 0
+      },
+      "requires_dirty_clean_topology_validation": true,
+      "requires_auto_multiple_candidates": true,
+      "requires_manual_orthogonal_drag": true,
+      "requires_CAD_block_output": true,
+      "statistics": [
+        "base_people",
+        "target_pairs",
+        "placed_cabinet_groups",
+        "nominal_pairs",
+        "valid_pairs",
+        "assigned_people",
+        "remaining_people",
+        "surplus_pairs",
+        "cabinet_footprint_m2",
+        "boundary_area_m2",
+        "bypass_status"
+      ]
+    },
+    {
+      "mode_id": "first_change",
+      "display_name": "一更",
+      "implementation_phase": "v1_required",
+      "population_basis": "registered_people_by_gender",
+      "capacity_unit": "personal_locker_compartments",
+      "core_equipment_ids": [
+        "LOCKER12"
+      ],
+      "layout_families": [
+        "single_or_multi_wall",
+        "back_to_back_islands_with_wall_units",
+        "multiple_cabinet_rows"
+      ],
+      "boundary_rule": {
+        "inherit_shoe_1000_mm": false,
+        "rear_to_wall_clearance_mm": null,
+        "side_installation_gap_mm": null,
+        "back_to_back_gap_mm": null,
+        "front_operation_depth_mm": null,
+        "door_opening_geometry": "from_original_block_or_product_drawing",
+        "unverified_parameter_behavior": "allow_labelled_geometry_preview_but_never_claim_operation_pass",
+        "historical_950_mm_opposing_gap_is_validated_default": false
+      },
+      "capacity_rules": {
+        "people_per_cabinet": 12,
+        "columns": 3,
+        "levels": 4,
+        "compartments_per_person": 1,
+        "cabinet_count": "ceil(target_people / 12)",
+        "dimensions_mm": [
+          1140,
+          500,
+          2095
+        ],
+        "footprint_per_cabinet_m2": 0.57,
+        "single_cabinet_has_one_operating_face": true,
+        "back_to_back_pair_is_two_physical_cabinets": true,
+        "blocked_compartments_do_not_count_as_valid_capacity": true
+      },
+      "requires_dirty_clean_topology_validation": false,
+      "requires_auto_multiple_candidates": true,
+      "requires_manual_orthogonal_drag": true,
+      "requires_CAD_block_output": true,
+      "statistics": [
+        "base_people",
+        "target_compartments",
+        "placed_cabinets",
+        "nominal_compartments",
+        "blocked_compartments",
+        "valid_compartments",
+        "remaining_people",
+        "surplus_compartments",
+        "cabinet_footprint_m2",
+        "boundary_area_m2",
+        "door_and_activity_status"
+      ]
+    },
+    {
+      "mode_id": "second_change",
+      "display_name": "二更",
+      "implementation_phase": "v1_required",
+      "population_basis": "peak_shift_people_by_gender",
+      "capacity_unit": "independent_garment_hanging_positions",
+      "core_equipment_ids": [
+        "HANGER_CUSTOM"
+      ],
+      "required_auxiliary_entries": [
+        "CHANGING_MIRROR",
+        "UV_DEVICE"
+      ],
+      "layout_families": [
+        "wall_mounted_segments",
+        "supported_central_islands",
+        "wall_and_island_multi_segments"
+      ],
+      "boundary_rule": {
+        "inherit_shoe_1000_mm": false,
+        "wall_or_ceiling_installation_method": null,
+        "support_positions": null,
+        "installation_elevation_mm": null,
+        "garment_projection_geometry": null,
+        "operation_envelope_geometry": null,
+        "unverified_parameter_behavior": "allow_labelled_geometry_preview_but_never_claim_operation_pass"
+      },
+      "capacity_rules": {
+        "people_per_independent_hanging_position": 1,
+        "hook_pitch_mm": 100,
+        "default_hook_lines": 1,
+        "default_hook_line_count_is_verified": false,
+        "end_margin_start_mm_assumption": 50,
+        "end_margin_end_mm_assumption": 50,
+        "end_margin_source": "explicit_planning_assumption_not_in_original_table",
+        "segment_length_must_be_positive": true,
+        "single_line_segment_formula": "L <= 0 or L < a+b ? 0 : floor((L-a-b)/100)+1",
+        "sum_after_individual_segment_end_deductions": true,
+        "deduplicate_shared_corner_hook_coordinates": true,
+        "capacity_does_not_double_when_same_hook_line_is_accessible_from_both_sides": true,
+        "horizontal_tube_length_mm": 450,
+        "vertical_tube_component_length_mm_excluding_bolt": 650,
+        "component_length_650_is_not_installation_elevation": true
+      },
+      "requires_dirty_clean_topology_validation": false,
+      "requires_auto_multiple_candidates": true,
+      "requires_manual_orthogonal_drag": true,
+      "requires_CAD_block_output": true,
+      "statistics": [
+        "base_shift_people",
+        "target_hanging_positions",
+        "placed_segments",
+        "total_segment_length_mm",
+        "actual_hook_positions",
+        "duplicate_or_blocked_positions",
+        "valid_hanging_positions",
+        "remaining_people",
+        "surplus_hanging_positions",
+        "boundary_area_m2",
+        "installation_and_activity_status"
+      ]
+    }
+  ],
+  "auxiliary_equipment_definitions": [
+    {
+      "id": "CHANGING_MIRROR",
+      "name": "更衣镜",
+      "mode_id": "second_change",
+      "source": "references/original_images/04-1794325020493.png",
+      "width_mm": 1400,
+      "height_mm": 1600,
+      "bottom_elevation_mm": 600,
+      "depth_mm": null,
+      "quantity_per_room": null,
+      "people_capacity": 0,
+      "cad_block_source_status": "missing",
+      "requires_placement_or_explicit_project_disposition": true
+    },
+    {
+      "id": "UV_DEVICE",
+      "name": "紫外线设备",
+      "mode_id": "second_change",
+      "source": "references/original_images/04-1794325020493.png",
+      "source_installation_elevation_mm": 2200,
+      "source_voltage_v": 220,
+      "source_power_w": 15,
+      "dimensions_mm": null,
+      "quantity_per_room": null,
+      "people_capacity": 0,
+      "cad_block_source_status": "missing",
+      "requires_placement_or_explicit_project_disposition": true
+    }
+  ],
+  "room_instances": [
+    {
+      "room_id": "shoe_shared",
+      "mode_id": "shoe",
+      "name": "共用换鞋间",
+      "gender": "shared",
+      "base_people": 600,
+      "reserve_ratio": 0.0,
+      "target_capacity": 600,
+      "reference_nominal_combination": {
+        "S24": 25
+      },
+      "reference_nominal_capacity": 600,
+      "reference_cabinet_footprint_m2": 30.0,
+      "boundary": null,
+      "candidate_schemes": [],
+      "current_candidate_id": null,
+      "placed_instances": [],
+      "validation_status": "not_started"
+    },
+    {
+      "room_id": "male_first",
+      "mode_id": "first_change",
+      "name": "男一更",
+      "gender": "male",
+      "base_people": 300,
+      "reserve_ratio": 0.0,
+      "target_capacity": 300,
+      "reference_nominal_combination": {
+        "LOCKER12": 25
+      },
+      "reference_nominal_capacity": 300,
+      "reference_cabinet_footprint_m2": 14.25,
+      "boundary": null,
+      "candidate_schemes": [],
+      "current_candidate_id": null,
+      "placed_instances": [],
+      "validation_status": "not_started"
+    },
+    {
+      "room_id": "female_first",
+      "mode_id": "first_change",
+      "name": "女一更",
+      "gender": "female",
+      "base_people": 300,
+      "reserve_ratio": 0.0,
+      "target_capacity": 300,
+      "reference_nominal_combination": {
+        "LOCKER12": 25
+      },
+      "reference_nominal_capacity": 300,
+      "reference_cabinet_footprint_m2": 14.25,
+      "boundary": null,
+      "candidate_schemes": [],
+      "current_candidate_id": null,
+      "placed_instances": [],
+      "validation_status": "not_started"
+    },
+    {
+      "room_id": "male_second",
+      "mode_id": "second_change",
+      "name": "男二更",
+      "gender": "male",
+      "base_people": 150,
+      "reserve_ratio": 0.0,
+      "target_capacity": 150,
+      "reference_single_segment_length_mm": 15000,
+      "reference_hook_pitch_mm": 100,
+      "reference_end_margins_mm_assumption": [
+        50,
+        50
+      ],
+      "reference_nominal_capacity": 150,
+      "boundary": null,
+      "candidate_schemes": [],
+      "current_candidate_id": null,
+      "placed_instances": [],
+      "validation_status": "not_started"
+    },
+    {
+      "room_id": "female_second",
+      "mode_id": "second_change",
+      "name": "女二更",
+      "gender": "female",
+      "base_people": 150,
+      "reserve_ratio": 0.0,
+      "target_capacity": 150,
+      "reference_single_segment_length_mm": 15000,
+      "reference_hook_pitch_mm": 100,
+      "reference_end_margins_mm_assumption": [
+        50,
+        50
+      ],
+      "reference_nominal_capacity": 150,
+      "boundary": null,
+      "candidate_schemes": [],
+      "current_candidate_id": null,
+      "placed_instances": [],
+      "validation_status": "not_started"
+    }
+  ],
+  "switching_contract": {
+    "preserve_boundary_per_room": true,
+    "preserve_candidates_per_room": true,
+    "preserve_manual_edits_per_room": true,
+    "preserve_equipment_block_mapping_per_mode": true,
+    "scope_generation_and_replacement_to_current_room": true,
+    "do_not_delete_other_room_entities": true,
+    "preserve_pending_preview_without_automatic_commit": true,
+    "persist_room_id_on_each_CAD_instance": true,
+    "restore_after_drawing_save_and_reopen": true,
+    "recalculate_after_native_MOVE_ROTATE_ERASE": true,
+    "project_summary_keeps_shoe_locker_and_hanger_units_separate": true
+  },
+  "population_acceptance_cases": [
+    {
+      "registered": 600,
+      "peak_shift": 300,
+      "male_ratio": 0.5,
+      "reserve": 0.0,
+      "shoe": 600,
+      "male_first_people": 300,
+      "female_first_people": 300,
+      "male_first_cabinets": 25,
+      "female_first_cabinets": 25,
+      "male_second": 150,
+      "female_second": 150
+    },
+    {
+      "registered": 500,
+      "peak_shift": 250,
+      "male_ratio": 0.5,
+      "reserve": 0.0,
+      "shoe": 500,
+      "male_first_people": 250,
+      "female_first_people": 250,
+      "male_first_cabinets": 21,
+      "female_first_cabinets": 21,
+      "male_second": 125,
+      "female_second": 125
+    },
+    {
+      "registered": 501,
+      "peak_shift": 251,
+      "male_ratio": 0.5,
+      "reserve": 0.0,
+      "shoe": 501,
+      "male_first_people": 251,
+      "female_first_people": 250,
+      "male_first_cabinets": 21,
+      "female_first_cabinets": 21,
+      "male_second": 126,
+      "female_second": 125
+    }
+  ],
+  "interpretation": "这些配置及验收例用于指导首版开发；不是已经实现的 CAD 插件，也不是房间净面积或操作可用性证明。"
+}

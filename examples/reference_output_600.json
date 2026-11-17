@@ -1,0 +1,475 @@
+{
+  "scope": "handoff_reference_arithmetic_not_a_cad_plugin",
+  "module_table": [
+    {
+      "sku": "S12",
+      "capacity_people": 12,
+      "columns_per_side_per_box": 4,
+      "vertical_cells_per_box": 3,
+      "stack_boxes": 1,
+      "physical_box_count": 1,
+      "cells_per_person": 2,
+      "total_cells": 24,
+      "length_mm": 1000,
+      "depth_mm": 600,
+      "height_mm": 600,
+      "nominal_cell_allocation_mm": [
+        250,
+        300,
+        200
+      ],
+      "internal_clear_cell_mm": null,
+      "footprint_m2": 0.6,
+      "ordinary_crossing_surface_assumed": true,
+      "crossing_verified": false,
+      "dimension_status": "derived_custom_module"
+    },
+    {
+      "sku": "S18",
+      "capacity_people": 18,
+      "columns_per_side_per_box": 6,
+      "vertical_cells_per_box": 3,
+      "stack_boxes": 1,
+      "physical_box_count": 1,
+      "cells_per_person": 2,
+      "total_cells": 36,
+      "length_mm": 1500,
+      "depth_mm": 600,
+      "height_mm": 600,
+      "nominal_cell_allocation_mm": [
+        250,
+        300,
+        200
+      ],
+      "internal_clear_cell_mm": null,
+      "footprint_m2": 0.9,
+      "ordinary_crossing_surface_assumed": true,
+      "crossing_verified": false,
+      "dimension_status": "derived_custom_module"
+    },
+    {
+      "sku": "S24",
+      "capacity_people": 24,
+      "columns_per_side_per_box": 8,
+      "vertical_cells_per_box": 3,
+      "stack_boxes": 1,
+      "physical_box_count": 1,
+      "cells_per_person": 2,
+      "total_cells": 48,
+      "length_mm": 2000,
+      "depth_mm": 600,
+      "height_mm": 600,
+      "nominal_cell_allocation_mm": [
+        250,
+        300,
+        200
+      ],
+      "internal_clear_cell_mm": null,
+      "footprint_m2": 1.2,
+      "ordinary_crossing_surface_assumed": true,
+      "crossing_verified": false,
+      "dimension_status": "source_and_latest_user"
+    },
+    {
+      "sku": "S48",
+      "capacity_people": 48,
+      "columns_per_side_per_box": 8,
+      "vertical_cells_per_box": 3,
+      "stack_boxes": 2,
+      "physical_box_count": 2,
+      "cells_per_person": 2,
+      "total_cells": 96,
+      "length_mm": 2000,
+      "depth_mm": 600,
+      "height_mm": 1200,
+      "nominal_cell_allocation_mm": [
+        250,
+        300,
+        200
+      ],
+      "internal_clear_cell_mm": null,
+      "footprint_m2": 1.2,
+      "ordinary_crossing_surface_assumed": false,
+      "crossing_verified": false,
+      "dimension_status": "derived_custom_module"
+    }
+  ],
+  "uniform_S24": {
+    "registered_people": 600,
+    "reserve_ratio": 0.0,
+    "target_people": 600,
+    "placement_groups": 25,
+    "physical_boxes": 25,
+    "installed_nominal_capacity": 600,
+    "total_cells": 1200,
+    "nominal_surplus": 0,
+    "cabinet_projection_area_m2": 30.0,
+    "verified_effective_capacity": null,
+    "room_area_m2": null,
+    "status": "storage_arithmetic_only"
+  },
+  "stacked_only_arithmetic_not_layout": {
+    "registered_people": 600,
+    "reserve_ratio": 0.0,
+    "target_people": 600,
+    "placement_groups": 13,
+    "physical_boxes": 26,
+    "installed_nominal_capacity": 624,
+    "total_cells": 1248,
+    "nominal_surplus": 24,
+    "cabinet_projection_area_m2": 15.6,
+    "verified_effective_capacity": null,
+    "room_area_m2": null,
+    "status": "storage_arithmetic_only"
+  },
+  "unverified_envelope_estimates": [
+    {
+      "template_id": "outside_tangent_sector_R600_r3_L16000_c1000",
+      "rows": 3,
+      "run_mm": 16000,
+      "connector_mm": 1000,
+      "clear_row_gap_mm_in_this_template": 1000,
+      "boundary_clearance_mm": 1000,
+      "counts": {
+        "S12": 2,
+        "S24": 24
+      },
+      "placement_groups": 26,
+      "physical_boxes": 26,
+      "corner_pieces": 4,
+      "nominal_capacity": 600,
+      "total_cells": 1200,
+      "rectangle_mm": [
+        19200,
+        5800
+      ],
+      "rectangle_envelope_area_m2": 111.36,
+      "straight_cabinet_projection_m2": 30.0,
+      "assumed_corner_projection_m2": 1.130973,
+      "is_feasible_layout": false,
+      "validation_state": "estimate_only",
+      "missing_validation": [
+        "actual_source_block_and_corner_geometry",
+        "end_closure_and_hygiene_topology",
+        "entry_exit_door_conflicts",
+        "both_fronts_and_cabinet_doors",
+        "simultaneous_shoe_changing",
+        "ancillary_equipment_and_actual_boundary"
+      ],
+      "note": "柜阵包络预估，不是已通过使用验证的房间面积；未封闭S阵可绕端。",
+      "target_people": 600,
+      "nominal_surplus": 0
+    },
+    {
+      "template_id": "outside_tangent_sector_R600_r4_L12000_c1000",
+      "rows": 4,
+      "run_mm": 12000,
+      "connector_mm": 1000,
+      "clear_row_gap_mm_in_this_template": 1000,
+      "boundary_clearance_mm": 1000,
+      "counts": {
+        "S12": 3,
+        "S24": 24
+      },
+      "placement_groups": 27,
+      "physical_boxes": 27,
+      "corner_pieces": 6,
+      "nominal_capacity": 612,
+      "total_cells": 1224,
+      "rectangle_mm": [
+        15200,
+        7400
+      ],
+      "rectangle_envelope_area_m2": 112.48,
+      "straight_cabinet_projection_m2": 30.6,
+      "assumed_corner_projection_m2": 1.69646,
+      "is_feasible_layout": false,
+      "validation_state": "estimate_only",
+      "missing_validation": [
+        "actual_source_block_and_corner_geometry",
+        "end_closure_and_hygiene_topology",
+        "entry_exit_door_conflicts",
+        "both_fronts_and_cabinet_doors",
+        "simultaneous_shoe_changing",
+        "ancillary_equipment_and_actual_boundary"
+      ],
+      "note": "柜阵包络预估，不是已通过使用验证的房间面积；未封闭S阵可绕端。",
+      "target_people": 600,
+      "nominal_surplus": 12
+    },
+    {
+      "template_id": "outside_tangent_sector_R600_r6_L7500_c1000",
+      "rows": 6,
+      "run_mm": 7500,
+      "connector_mm": 1000,
+      "clear_row_gap_mm_in_this_template": 1000,
+      "boundary_clearance_mm": 1000,
+      "counts": {
+        "S12": 5,
+        "S18": 6,
+        "S24": 18
+      },
+      "placement_groups": 29,
+      "physical_boxes": 29,
+      "corner_pieces": 10,
+      "nominal_capacity": 600,
+      "total_cells": 1200,
+      "rectangle_mm": [
+        10700,
+        10600
+      ],
+      "rectangle_envelope_area_m2": 113.42,
+      "straight_cabinet_projection_m2": 30.0,
+      "assumed_corner_projection_m2": 2.827433,
+      "is_feasible_layout": false,
+      "validation_state": "estimate_only",
+      "missing_validation": [
+        "actual_source_block_and_corner_geometry",
+        "end_closure_and_hygiene_topology",
+        "entry_exit_door_conflicts",
+        "both_fronts_and_cabinet_doors",
+        "simultaneous_shoe_changing",
+        "ancillary_equipment_and_actual_boundary"
+      ],
+      "note": "柜阵包络预估，不是已通过使用验证的房间面积；未封闭S阵可绕端。",
+      "target_people": 600,
+      "nominal_surplus": 0
+    },
+    {
+      "template_id": "outside_tangent_sector_R600_r3_L16500_c1000",
+      "rows": 3,
+      "run_mm": 16500,
+      "connector_mm": 1000,
+      "clear_row_gap_mm_in_this_template": 1000,
+      "boundary_clearance_mm": 1000,
+      "counts": {
+        "S12": 2,
+        "S18": 9,
+        "S24": 18
+      },
+      "placement_groups": 29,
+      "physical_boxes": 29,
+      "corner_pieces": 4,
+      "nominal_capacity": 618,
+      "total_cells": 1236,
+      "rectangle_mm": [
+        19700,
+        5800
+      ],
+      "rectangle_envelope_area_m2": 114.26,
+      "straight_cabinet_projection_m2": 30.9,
+      "assumed_corner_projection_m2": 1.130973,
+      "is_feasible_layout": false,
+      "validation_state": "estimate_only",
+      "missing_validation": [
+        "actual_source_block_and_corner_geometry",
+        "end_closure_and_hygiene_topology",
+        "entry_exit_door_conflicts",
+        "both_fronts_and_cabinet_doors",
+        "simultaneous_shoe_changing",
+        "ancillary_equipment_and_actual_boundary"
+      ],
+      "note": "柜阵包络预估，不是已通过使用验证的房间面积；未封闭S阵可绕端。",
+      "target_people": 600,
+      "nominal_surplus": 18
+    },
+    {
+      "template_id": "outside_tangent_sector_R600_r5_L9500_c1000",
+      "rows": 5,
+      "run_mm": 9500,
+      "connector_mm": 1000,
+      "clear_row_gap_mm_in_this_template": 1000,
+      "boundary_clearance_mm": 1000,
+      "counts": {
+        "S12": 4,
+        "S18": 5,
+        "S24": 20
+      },
+      "placement_groups": 29,
+      "physical_boxes": 29,
+      "corner_pieces": 8,
+      "nominal_capacity": 618,
+      "total_cells": 1236,
+      "rectangle_mm": [
+        12700,
+        9000
+      ],
+      "rectangle_envelope_area_m2": 114.3,
+      "straight_cabinet_projection_m2": 30.9,
+      "assumed_corner_projection_m2": 2.261947,
+      "is_feasible_layout": false,
+      "validation_state": "estimate_only",
+      "missing_validation": [
+        "actual_source_block_and_corner_geometry",
+        "end_closure_and_hygiene_topology",
+        "entry_exit_door_conflicts",
+        "both_fronts_and_cabinet_doors",
+        "simultaneous_shoe_changing",
+        "ancillary_equipment_and_actual_boundary"
+      ],
+      "note": "柜阵包络预估，不是已通过使用验证的房间面积；未封闭S阵可绕端。",
+      "target_people": 600,
+      "nominal_surplus": 18
+    },
+    {
+      "template_id": "outside_tangent_sector_R600_r4_L12500_c1000",
+      "rows": 4,
+      "run_mm": 12500,
+      "connector_mm": 1000,
+      "clear_row_gap_mm_in_this_template": 1000,
+      "boundary_clearance_mm": 1000,
+      "counts": {
+        "S12": 3,
+        "S18": 12,
+        "S24": 16
+      },
+      "placement_groups": 31,
+      "physical_boxes": 31,
+      "corner_pieces": 6,
+      "nominal_capacity": 636,
+      "total_cells": 1272,
+      "rectangle_mm": [
+        15700,
+        7400
+      ],
+      "rectangle_envelope_area_m2": 116.18,
+      "straight_cabinet_projection_m2": 31.8,
+      "assumed_corner_projection_m2": 1.69646,
+      "is_feasible_layout": false,
+      "validation_state": "estimate_only",
+      "missing_validation": [
+        "actual_source_block_and_corner_geometry",
+        "end_closure_and_hygiene_topology",
+        "entry_exit_door_conflicts",
+        "both_fronts_and_cabinet_doors",
+        "simultaneous_shoe_changing",
+        "ancillary_equipment_and_actual_boundary"
+      ],
+      "note": "柜阵包络预估，不是已通过使用验证的房间面积；未封闭S阵可绕端。",
+      "target_people": 600,
+      "nominal_surplus": 36
+    }
+  ],
+  "explicit_600_person_example": {
+    "template_id": "outside_tangent_sector_R600_r6_L7500_c1000",
+    "rows": 6,
+    "run_mm": 7500,
+    "connector_mm": 1000,
+    "clear_row_gap_mm_in_this_template": 1000,
+    "boundary_clearance_mm": 1000,
+    "counts": {
+      "S12": 5,
+      "S18": 6,
+      "S24": 18
+    },
+    "placement_groups": 29,
+    "physical_boxes": 29,
+    "corner_pieces": 10,
+    "nominal_capacity": 600,
+    "total_cells": 1200,
+    "rectangle_mm": [
+      10700,
+      10600
+    ],
+    "rectangle_envelope_area_m2": 113.42,
+    "straight_cabinet_projection_m2": 30.0,
+    "assumed_corner_projection_m2": 2.827433,
+    "is_feasible_layout": false,
+    "validation_state": "estimate_only",
+    "missing_validation": [
+      "actual_source_block_and_corner_geometry",
+      "end_closure_and_hygiene_topology",
+      "entry_exit_door_conflicts",
+      "both_fronts_and_cabinet_doors",
+      "simultaneous_shoe_changing",
+      "ancillary_equipment_and_actual_boundary"
+    ],
+    "note": "柜阵包络预估，不是已通过使用验证的房间面积；未封闭S阵可绕端。"
+  },
+  "three_room_defaults": {
+    "registered_split": {
+      "male": 300,
+      "female": 300
+    },
+    "shift_split": {
+      "male": 150,
+      "female": 150
+    },
+    "reserve_application": "ceil_per_room_after_sex_split",
+    "rooms": {
+      "shoe_shared": {
+        "registered_people": 600,
+        "reserve_ratio": 0.0,
+        "target_people": 600,
+        "placement_groups": 25,
+        "physical_boxes": 25,
+        "installed_nominal_capacity": 600,
+        "total_cells": 1200,
+        "nominal_surplus": 0,
+        "cabinet_projection_area_m2": 30.0,
+        "verified_effective_capacity": null,
+        "room_area_m2": null,
+        "status": "storage_arithmetic_only"
+      },
+      "male_first": {
+        "room_mode": "first_change",
+        "allocation_basis": "registered_people",
+        "assigned_roster_people": 300,
+        "target_people": 300,
+        "equipment_id": "LOCKER12",
+        "cabinet_count": 25,
+        "nominal_capacity": 300,
+        "nominal_surplus": 0,
+        "cabinet_projection_area_m2": 14.25,
+        "verified_room_area_m2": null,
+        "status": "arithmetic_only"
+      },
+      "male_second": {
+        "room_mode": "second_change",
+        "allocation_basis": "peak_shift_people",
+        "assigned_shift_people": 150,
+        "target_hooks": 150,
+        "equipment_id": "HANGER_CUSTOM",
+        "continuous_length_mm": 15000,
+        "pitch_mm": 100,
+        "end_margins_mm": [
+          50,
+          50
+        ],
+        "end_margins_status": "assumption_not_source_dimension",
+        "verified_room_area_m2": null,
+        "status": "arithmetic_only"
+      },
+      "female_first": {
+        "room_mode": "first_change",
+        "allocation_basis": "registered_people",
+        "assigned_roster_people": 300,
+        "target_people": 300,
+        "equipment_id": "LOCKER12",
+        "cabinet_count": 25,
+        "nominal_capacity": 300,
+        "nominal_surplus": 0,
+        "cabinet_projection_area_m2": 14.25,
+        "verified_room_area_m2": null,
+        "status": "arithmetic_only"
+      },
+      "female_second": {
+        "room_mode": "second_change",
+        "allocation_basis": "peak_shift_people",
+        "assigned_shift_people": 150,
+        "target_hooks": 150,
+        "equipment_id": "HANGER_CUSTOM",
+        "continuous_length_mm": 15000,
+        "pitch_mm": 100,
+        "end_margins_mm": [
+          50,
+          50
+        ],
+        "end_margins_status": "assumption_not_source_dimension",
+        "verified_room_area_m2": null,
+        "status": "arithmetic_only"
+      }
+    },
+    "all_three_room_modes_required_in_first_release": true
+  }
+}

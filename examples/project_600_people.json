@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "units": "mm",
+  "registered_people": 600,
+  "peak_shift_people": 300,
+  "reserve_ratio": 0,
+  "boundary_rectangle": null,
+  "allowed_skus": [
+    "S12",
+    "S18",
+    "S24",
+    "S48"
+  ],
+  "boundary_clearance_mm": 1000,
+  "orthogonal": true,
+  "entrance_dirty_point": null,
+  "exit_clean_point": null,
+  "fixed_partitions": [],
+  "connection_template": "source_S_pending_native_block_mapping",
+  "expected_uniform_S24_storage": {
+    "placement_groups": 25,
+    "people": 600,
+    "cells": 1200,
+    "projection_m2": 30,
+    "verified_room_area_m2": null
+  },
+  "expected_with_explicit_reserve_10pct_uniform_S24": {
+    "target_people": 660,
+    "placement_groups": 28,
+    "people": 672
+  },
+  "status": "input_fixture_not_a_completed_layout"
+}

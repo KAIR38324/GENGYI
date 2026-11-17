@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/KAIR38324/GENGYI/schemas/layout_instance.schema.json",
+  "title": "GENGYI layout instance handoff contract",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "units",
+    "instances",
+    "validation",
+    "room_instance_id",
+    "room_mode",
+    "gender_scope"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "units": {
+      "const": "mm"
+    },
+    "instances": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "equipment_id",
+          "insert_mm",
+          "rotation_deg",
+          "block_provenance",
+          "nominal_capacity",
+          "effective_capacity",
+          "capacity_validation",
+          "rotation_mode"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "equipment_id": {
+            "type": "string"
+          },
+          "insert_mm": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "rotation_deg": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMaximum": 360
+          },
+          "block_provenance": {
+            "enum": [
+              "original_cad",
+              "image_reconstructed",
+              "legacy_generated",
+              "missing"
+            ]
+          },
+          "nominal_capacity": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "effective_capacity": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "capacity_validation": {
+            "enum": [
+              "not_run",
+              "pass",
+              "fail",
+              "requires_input",
+              "approximate_only"
+            ]
+          },
+          "native_handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "physical_box_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source_file_sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_block_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rotation_mode": {
+            "enum": [
+              "orthogonal",
+              "free"
+            ],
+            "default": "orthogonal"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "rotation_mode": {
+                  "const": "orthogonal"
+                }
+              },
+              "required": [
+                "rotation_mode"
+              ]
+            },
+            "then": {
+              "properties": {
+                "rotation_deg": {
+                  "enum": [
+                    0,
+                    90,
+                    180,
+                    270
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "capacity_validation": {
+                  "const": "pass"
+                }
+              },
+              "required": [
+                "capacity_validation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effective_capacity": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "block_provenance": {
+                  "const": "original_cad"
+                }
+              },
+              "required": [
+                "block_provenance"
+              ]
+            },
+            "then": {
+              "required": [
+                "source_file_sha256",
+                "source_block_name"
+              ],
+              "properties": {
+                "source_file_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-fA-F]{64}$"
+                },
+                "source_block_name": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "geometry",
+        "boundary",
+        "hygiene_without_crossing",
+        "workflow_with_crossing",
+        "front_access",
+        "source_block"
+      ],
+      "properties": {
+        "geometry": {
+          "enum": [
+            "not_run",
+            "pass",
+            "fail",
+            "requires_input",
+            "approximate_only"
+          ]
+        },
+        "boundary": {
+          "enum": [
+            "not_run",
+            "pass",
+            "fail",
+            "requires_input",
+            "approximate_only"
+          ]
+        },
+        "hygiene_without_crossing": {
+          "enum": [
+            "not_run",
+            "pass",
+            "fail",
+            "requires_input",
+            "approximate_only"
+          ]
+        },
+        "workflow_with_crossing": {
+          "enum": [
+            "not_run",
+            "pass",
+            "fail",
+            "requires_input",
+            "approximate_only"
+          ]
+        },
+        "front_access": {
+          "enum": [
+            "not_run",
+            "pass",
+            "fail",
+            "requires_input",
+            "approximate_only"
+          ]
+        },
+        "source_block": {
+          "enum": [
+            "not_run",
+            "pass",
+            "fail",
+            "requires_input",
+            "approximate_only"
+          ]
+        }
+      }
+    },
+    "room_instance_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "room_mode": {
+      "enum": [
+        "shoe",
+        "first_change",
+        "second_change"
+      ]
+    },
+    "gender_scope": {
+      "enum": [
+        "shared",
+        "male",
+        "female",
+        "custom"
+      ]
+    }
+  },
+  "additionalProperties": true
+}
