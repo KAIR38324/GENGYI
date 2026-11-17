@@ -1,0 +1,2 @@
+# Optional locally; CI installs this for full handoff-schema validation.
+jsonschema==4.25.1

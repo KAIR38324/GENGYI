@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "source_base_commit": "46a5b44a45c2f9966d7d564f2ea6063622e34a5f",
+  "target": "AutoCAD 2024 Windows x64 .NET Framework 4.8",
+  "python_reference_tests": 16,
+  "core_checks": 49,
+  "json_schema_export_modes": [
+    "shoe",
+    "first_change",
+    "second_change"
+  ],
+  "original_image_integrity": "10 of 10 SHA256 and byte sizes match",
+  "build": "Release net48 x64, zero warnings and errors",
+  "command_count": 31,
+  "host_acceptance": "not_run_no_Windows_AutoCAD_in_this_environment",
+  "original_native_blocks": "not_in_repository; local binding/import implemented",
+  "source_visual_acceptance": "pending_real_CAD_comparison",
+  "statement": "Implementation and pure-code evidence are separate from real host acceptance."
+}

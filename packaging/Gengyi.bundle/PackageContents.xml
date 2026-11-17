@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ApplicationPackage SchemaVersion="1.0" AutodeskProduct="AutoCAD" Name="GENGYI Three-room Layout" AppVersion="0.2.0" Description="AutoCAD 2024 three-room layout plugin; host acceptance pending" ProductCode="{C7F68269-FAB6-46D9-87AF-9CBA33B7A103}" UpgradeCode="{36250D13-C172-4DB8-AAD4-B63B36EF04AF}">
+  <CompanyDetails Name="GENGYI" />
+  <Components>
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R24.3" SeriesMax="R24.3" />
+    <ComponentEntry AppName="GENGYI" Version="0.2.0" ModuleName="./Contents/Windows/Gengyi.Cad.AutoCAD2024.dll" LoadOnCommandInvocation="True" LoadOnAutoCADStartup="False">
+      <Commands GroupName="GENGYI">
+        <Command Global="GYADD" Local="GYADD" />
+        <Command Global="GYBLOCK" Local="GYBLOCK" />
+        <Command Global="GYCANCEL" Local="GYCANCEL" />
+        <Command Global="GYCHECK" Local="GYCHECK" />
+        <Command Global="GYCLOSURES" Local="GYCLOSURES" />
+        <Command Global="GYCOMMIT" Local="GYCOMMIT" />
+        <Command Global="GYCROSS" Local="GYCROSS" />
+        <Command Global="GYDELETE" Local="GYDELETE" />
+        <Command Global="GYDRAG" Local="GYDRAG" />
+        <Command Global="GYENV" Local="GYENV" />
+        <Command Global="GYESTIMATE" Local="GYESTIMATE" />
+        <Command Global="GYEXPORT" Local="GYEXPORT" />
+        <Command Global="GYGENERATE" Local="GYGENERATE" />
+        <Command Global="GYGROUP" Local="GYGROUP" />
+        <Command Global="GYIMPORT" Local="GYIMPORT" />
+        <Command Global="GYLENGTH" Local="GYLENGTH" />
+        <Command Global="GYLOCATE" Local="GYLOCATE" />
+        <Command Global="GYLOCK" Local="GYLOCK" />
+        <Command Global="GYNEWROOM" Local="GYNEWROOM" />
+        <Command Global="GYOBSTACLES" Local="GYOBSTACLES" />
+        <Command Global="GYPREVIEW" Local="GYPREVIEW" />
+        <Command Global="GYREBUILD" Local="GYREBUILD" />
+        <Command Global="GYRECT" Local="GYRECT" />
+        <Command Global="GYROOM" Local="GYROOM" />
+        <Command Global="GYROTATE" Local="GYROTATE" />
+        <Command Global="GYSEEDS" Local="GYSEEDS" />
+        <Command Global="GYSETUP" Local="GYSETUP" />
+        <Command Global="GYSTATS" Local="GYSTATS" />
+        <Command Global="GYTRANSFER" Local="GYTRANSFER" />
+        <Command Global="GYTYPE" Local="GYTYPE" />
+        <Command Global="GYVERIFY" Local="GYVERIFY" />
+      </Commands>
+    </ComponentEntry>
+  </Components>
+</ApplicationPackage>

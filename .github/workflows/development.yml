@@ -1,0 +1,31 @@
+name: Development baseline
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check-and-build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - run: python -m pip install -r tools/requirements-checks.txt
+      - run: python tools/dev.py check
+      - run: python tools/dev.py package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoCAD2024-three-room-plugin-${{ runner.os }}
+          path: artifacts/Gengyi.AutoCAD2024.zip
+          if-no-files-found: error
