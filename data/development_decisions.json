@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "updated_local_date": "2026-11-17",
+  "timezone": "Asia/Shanghai",
+  "status": "confirmed_development_handoff_not_implemented_plugin",
+  "context_base_commit": "46a5b44a45c2f9966d7d564f2ea6063622e34a5f",
+  "precedence": "later_user_instructions_then_this_handoff_then_original_context",
+  "development_location": "cloud",
+  "cad_acceptance_location": "user_local_windows",
+  "target_host": {
+    "product": "AutoCAD",
+    "major_version": 2024,
+    "observed_executable_version": "R24.3.61.0.0",
+    "target_framework": "net48",
+    "must_coexist_with": "Tangent_Tianzheng_Architecture",
+    "tianzheng_version_verified": false,
+    "host_plugin_tests_run": false
+  },
+  "ui": {
+    "container": "on_demand_dialog",
+    "sidebar_allowed": false,
+    "palette_set_allowed": false,
+    "yield_focus_for_cad_selection_and_drag": true,
+    "main_statistics": ["target", "effective_capacity", "shortage", "placed_count", "issue_count"],
+    "details_collapsible": true,
+    "issues_locate_instances": true
+  },
+  "coexistence": {
+    "resource_and_command_prefix": "GENGYI",
+    "modify_tianzheng_cui": false,
+    "override_existing_commands": false,
+    "modify_global_cad_settings": false,
+    "change_cad_security_policy": false,
+    "verification": "pending_user_local_acceptance"
+  },
+  "architecture": {
+    "runtime": "local_plugin",
+    "plugin_project_count": 1,
+    "separate_core_from_cad_gui": true,
+    "online_runtime_services_required": false
+  },
+  "required_modes": ["shoe", "first_change", "second_change"],
+  "default_rooms": ["shoe_shared", "male_first", "female_first", "male_second", "female_second"],
+  "constraint_input": "select_existing_cad_objects_or_draw_explicit_regions",
+  "layout": {
+    "strategy": "rule_templates_and_bounded_parameter_enumeration",
+    "maximum_candidates": 3,
+    "pad_with_equivalent_candidates": false,
+    "whole_room_generation": true,
+    "manual_adjustment": true,
+    "orthogonal_default": true,
+    "independent_along_wall_or_line_entry_v1": false,
+    "invalid_placement": "retain_visible_draft_with_diagnostics_exclude_invalid_capacity",
+    "constraint_change": "preserve_layout_revalidate_regenerate_only_on_user_request",
+    "end_closure": "preview_suggestion_requires_explicit_user_acceptance"
+  },
+  "persistence": {
+    "confirmed_layouts_per_room": 1,
+    "persist_candidate_history": false,
+    "candidate_comparison": "current_preview_session_only",
+    "preserve_room_work_when_switching": true,
+    "restore_current_layout_after_reopen": true
+  },
+  "employee_assignment_v1": false,
+  "cabinet_numbering_v1": true,
+  "assets": {
+    "user_has_original_cad_blocks": false,
+    "initial_source": "image_reconstructed",
+    "source_review": "pending",
+    "first_review_artifact": "one_combined_dimensioned_2d_shoe_locker_hanger_sample",
+    "freeze_device_templates_after_user_review": true,
+    "operation_template_preparer": "developer",
+    "operation_template_reviewer": "user",
+    "unverified_dimensions_remain_unverified": true
+  },
+  "baseline_verification": {
+    "python_tests_passed": 16,
+    "python_tests_failed": 0,
+    "plugin_build": "not_run",
+    "cad_runtime_acceptance": "not_run",
+    "tianzheng_coexistence": "not_run"
+  }
+}

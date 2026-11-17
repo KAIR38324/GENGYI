@@ -1,5 +1,9 @@
 # GENGYI 开发规则
 
+## 最新开发约束（2026-11-17）
+
+先读 `prompts/CLOUD_CODEX_START.md`、`docs/CLOUD_DEVELOPMENT_HANDOFF.md` 和 `data/development_decisions.json`。云端开发，用户本地AutoCAD2024+天正验收；保持轻量，**按需弹窗，不创建侧边栏/PaletteSet**，不改天正命令、菜单、快捷键或CAD全局设置。资源及命令使用GENGYI前缀。原有几何、容量及三模式规则保留；候选最多3个，每房间只持久化当前确认方案，员工绑定和独立沿线补摆入口不进首版。当前素材只有图片，先交二维设备汇总样张由用户核对。最新交接覆盖旧文档冲突，未核素材或缺少云端CAD不阻止继续独立开发。
+
 ## 开工顺序
 
 1. 读 README、prompts/LOCAL_CODEX_START.md、docs/00_REQUIREMENTS.md。
