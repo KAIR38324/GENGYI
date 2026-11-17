@@ -1,5 +1,7 @@
 # CAD 插件技术与交互契约
 
+> **最新覆盖（2026-11-17）**：开发在云端，CAD验收在用户本地；界面采用按需弹窗，**不使用停靠面板或PaletteSet**，并与天正建筑共存。候选最多3个，各房间只保存当前确认方案。以下历史建议遇到冲突时按 [最新交接](CLOUD_DEVELOPMENT_HANDOFF.md) 和 [机器可读决策](../data/development_decisions.json)执行。
+
 更新：2026-11-17。本文是交给本地 Codex 的开发要求，尚不是已经完成或通过宿主测试的插件说明。工程容量与几何计算以 `02_SHOE_GEOMETRY_AND_TOPOLOGY.md`、`03_CAPACITY_AND_AREA.md` 为准。
 
 ## 1. 首次开发先完成宿主识别
@@ -22,7 +24,7 @@ Autodesk 官方资料在检索日已按补丁区分运行时：AutoCAD 2026 至 
 | `UI` | 人数表单、候选列表、拖动、统计、异常定位 | 直接从后台线程修改 CAD 数据库 |
 | `Persistence` | 图纸内元数据、配置版本、候选 JSON、导出统计 | 云端账号、外部服务 |
 
-建议用 C# 编写与宿主无关的核心；目标框架由第一步识别结果决定。可以单独多目标编译或使用兼容的核心项目，但不要把 CAD DLL 传递引用进几何测试项目。算法输入输出用版本化 JSON，方便当前参考计算与后续 C# 实现比对。界面优先宿主内停靠面板；AutoCAD 适配可使用 `PaletteSet`。[A3]
+本轮使用一个 C#/.NET Framework 4.8 插件工程，内部将计算、CAD操作和界面分目录；不要把 CAD DLL 引入独立几何测试。算法输入输出沿用版本化数据约定。界面采用按需弹窗，不使用停靠面板或 `PaletteSet`；图上操作时让出焦点。所有命令和资源以 `GENGYI` 为前缀，不修改天正建筑的菜单、快捷键或命令。
 
 所有功能在本地完成。导入原块、读取用户选择的矩形、生成方案和统计不需要上传公司图纸，不默认扫描整盘或公司网络目录，不把项目资料自动写回公开仓库。
 
@@ -68,12 +70,13 @@ Autodesk 官方资料在检索日已按补丁区分运行时：AutoCAD 2026 至 
 
 | 操作 | 建议命令 | 用户看到的结果 |
 | --- | --- | --- |
-| 初始配置/原块绑定 | `GYSETUP` / `GYBLOCK` | 设备库和来源状态、单位及实际尺寸 |
-| 输入人数预估 | `GYESTIMATE` | 柜型组合、柜投影下界、方案面积范围及假设 |
-| 选择矩形并生成 | `GYLAYOUT` | 多个不同 S 形候选及各自容量/问题 |
-| 正交拖动/连接调整 | `GYDRAG` | 实时柜位、连接关系、距离和缺口更新 |
-| 校核 | `GYCHECK` | 几何、卫生分隔、容量、原块来源分别结论 |
-| 统计/重新识别 | `GYSTATS` | 已布置、有效、待布置和异常实例定位 |
+| 打开弹窗 | `GENGYI` | 按需显示的轻量弹窗，不创建侧栏 |
+| 初始配置/原块绑定 | `GENGYISETUP` / `GENGYIBLOCK` | 设备库和来源状态、单位及实际尺寸 |
+| 输入人数预估 | `GENGYIESTIMATE` | 柜型组合、柜投影下界、方案面积范围及假设 |
+| 选择矩形并生成 | `GENGYILAYOUT` | 多个不同 S 形候选及各自容量/问题 |
+| 正交拖动/连接调整 | `GENGYIDRAG` | 实时柜位、连接关系、距离和缺口更新 |
+| 校核 | `GENGYICHECK` | 几何、卫生分隔、容量、原块来源分别结论 |
+| 统计/重新识别 | `GENGYISTATS` | 已布置、有效、待布置和异常实例定位 |
 
 选择矩形支持闭合四边多段线或两角点，并允许矩形在当前 UCS 中旋转。先将 CAD 坐标映射到局部正交布局坐标，核心算法用毫米计算，再还原到 WCS；不得把世界 X/Y 轴强加给旋转的房间。检测非矩形、非共面、零面积和带弧边界并给出具体原因。门口、柱、固定设备和不可占用区作为显式约束输入；不要从原图截图自动猜门口坐标。
 
@@ -89,7 +92,7 @@ Autodesk 官方资料在检索日已按补丁区分运行时：AutoCAD 2026 至 
 
 相同构型的微小平移不应占满候选列表。几何签名应包含柜型、离散朝向、相对位置、连接图和入口侧，按容差归一后去重。镜像只有在入口、脏净侧、边界约束完全对称时才可合并。排序先满足硬约束及目标人位，再比较实际占用尺寸、剩余空间连贯性、无效人位、柜型复杂度和操作条件。不得通过把“超额容量”得分调高来让拥挤无效方案胜出。
 
-候选至少区分“有效候选”“几何可放但规则待满足”“无可行候选”。目标展示 3–8 个真正不同的有效候选；若只有 1 个或没有，应如实显示数量及限制原因，不造假候选。生成过程应可取消，后台计算只处理数据快照；CAD 读写在宿主要求的文档上下文完成。
+候选至少区分“有效候选”“几何可放但规则待满足”“无可行候选”。本轮最多展示3个真正不同的候选；若只有1个或没有，应如实显示数量及限制原因，不造假候选。候选在当前预览会话比较，图纸只保存各房间当前确认方案，不增加命名方案存档管理。生成过程应可取消，后台计算只处理数据快照；CAD读写在宿主要求的文档上下文完成。
 
 ## 6. 拖动与实时反馈
 
@@ -138,7 +141,7 @@ Autodesk 官方资料在检索日已按补丁区分运行时：AutoCAD 2026 至 
 
 - [A1 — Autodesk：Application Compatibility，AutoCAD 2026](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Customization/files/GUID-D54B0935-1638-4F97-8B37-1EC3635A1E71.htm)，检索 2026-11-17；应按补丁区分运行时。
 - [A2 — Autodesk：Create a New Project，AutoCAD 2025](https://help.autodesk.com/cloudhelp/2025/CHS/OARX-DevGuide-Managed/files/GUID-23E33075-3C36-48CA-B937-B85606B77F71.htm)，检索 2026-11-17；区分 2025.1.3 及以前和 2025.1.4 及以后。
-- [A3 — Autodesk：PaletteSet Class](https://help.autodesk.com/cloudhelp/2022/ENU/OARX-ManagedRefGuide/files/OARX-ManagedRefGuide-Autodesk_AutoCAD_Windows_PaletteSet.html)，类型能力参考，编译时以选定 SDK 为准。
+- [A3 — Autodesk：PaletteSet Class](https://help.autodesk.com/cloudhelp/2022/ENU/OARX-ManagedRefGuide/files/OARX-ManagedRefGuide-Autodesk_AutoCAD_Windows_PaletteSet.html)，仅保留历史调研来源；本轮用户已排除侧栏，此类型不作为实现目标。
 - [A4 — Autodesk：BlockReference Class](https://help.autodesk.com/cloudhelp/2026/ENU/OARX-ManagedRefGuide/files/OARX-ManagedRefGuide-Autodesk_AutoCAD_DatabaseServices_BlockReference.html)，块参照及变换。
 - [A5 — Autodesk：DrawJig Class](https://help.autodesk.com/cloudhelp/2026/ENU/OARX-ManagedRefGuide/files/OARX-ManagedRefGuide-Autodesk_AutoCAD_EditorInput_DrawJig.html)，拖动输入与图形预览。
 - [A6 — Autodesk：Handle Object Events](https://help.autodesk.com/cloudhelp/2026/ENU/OARX-DevGuide-Managed/files/GUID-E30279D1-E4B5-48A4-A3D8-9CEC83BD0967.htm)，对象与数据库级事件。
