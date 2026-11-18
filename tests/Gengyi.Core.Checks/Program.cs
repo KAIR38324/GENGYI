@@ -268,8 +268,13 @@ static class Program
         Assert(!AreaPlanning.IsPreviewCurrent(project.Population,r,0),"changing the people target invalidates the old planning preview");
         project.Population.PeoplePerShift--;r.Candidates.Add(new Candidate());
         Assert(AreaPlanning.IsPreviewCurrent(project.Population,r,0),"preview completion does not depend on random candidate or equipment IDs");
+        r.PreviewVisible=true;
         var restored=Serialization.Read<Project>(Serialization.Write(project));
         Assert(restored.Rooms[0].Boundary!.Outline!.Count==6 && restored.Rooms[0].PlanningPreviewOption==0 && AreaPlanning.IsPreviewCurrent(restored.Population,restored.Rooms[0],0),"actual polygon and workflow state survive save and reopen together");
+        var legacyPreview=Serialization.Read<Room>("{\"PreviewVisible\":true,\"SelectedCandidate\":0,\"Candidates\":[{}]}");
+        Assert(!restored.Rooms[0].PreviewVisible && restored.Rooms[0].Candidates.Count==1 &&
+            !legacyPreview.PreviewVisible && legacyPreview.Candidates.Count==1,
+            "candidate data survives reopening without restoring transient visibility from current or legacy drawing data");
         string exported=LayoutExport.Write(project,r);var document=JObject.Parse(exported);
         Assert((int)document["project_state"]!["Rooms"]![0]!["Boundary"]!["Outline"]!.Count()==6 && Math.Abs((double)document["statistics"]!["BoundaryM2"]!-224)<1e-8,"export retains the real concave outline and actual measured room area");
         var triangle=BoundaryEditing.FromOutline(new[]{new V2(0,0),new V2(18000,0),new V2(12000,16000),new V2(0,16000)},new Frame());

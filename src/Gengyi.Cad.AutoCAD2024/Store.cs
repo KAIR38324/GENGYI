@@ -61,7 +61,6 @@ namespace Gengyi.Cad.AutoCAD2024
                     int target=result.Population.For(room);
                     if(room.Candidates.RemoveAll(candidate=>candidate.Items.Count==0?target!=0:!Layout.IsShoeLayout(candidate.Items))==0)continue;
                     room.SelectedCandidate=Math.Max(0,room.Candidates.FindIndex(candidate=>candidate.Id==selected));
-                    room.PreviewVisible=room.PreviewVisible && room.Candidates.Count>0;
                     room.Stale|=room.Candidates.Count==0;
                 }
                 return result;
@@ -78,7 +77,11 @@ namespace Gengyi.Cad.AutoCAD2024
             if(entity.ExtensionDictionary.IsNull)entity.CreateExtensionDictionary();
             Write((DBDictionary)transaction.GetObject(entity.ExtensionDictionary,OpenMode.ForWrite),InstanceKey,Serialization.Write(item),transaction);
         }
-        internal static void Project(Database database,Project project,Transaction transaction) =>
-            Write((DBDictionary)transaction.GetObject(database.NamedObjectsDictionaryId,OpenMode.ForWrite),ProjectKey,Pack(project),transaction);
+        internal static string SaveProject(Database database,Project project,Transaction transaction)
+        {
+            string data=Pack(project);
+            Write((DBDictionary)transaction.GetObject(database.NamedObjectsDictionaryId,OpenMode.ForWrite),ProjectKey,data,transaction);
+            return data;
+        }
     }
 }

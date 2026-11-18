@@ -19,6 +19,7 @@ namespace Gengyi.Cad.AutoCAD2024
         internal string WitnessRoom="";
         internal readonly Preview Preview=new Preview();
         private string? saved;
+        private readonly HashSet<string> roomsWithGraphics=new HashSet<string>();
         internal Session(Document document)
         {
             Document=document;
@@ -147,26 +148,58 @@ namespace Gengyi.Cad.AutoCAD2024
             }
             Dirty=false;
         }
+        internal void EnableRoomGraphics()
+        {
+            Preview.Clear();
+            roomsWithGraphics.Add(Room.Id);
+        }
+        internal void HideRoomGraphics()
+        {
+            roomsWithGraphics.Remove(Project.CurrentRoomId);
+            var room=Project.Rooms.FirstOrDefault(r=>r.Id==Project.CurrentRoomId);
+            if(room!=null)room.PreviewVisible=false;
+            WitnessPath=null;
+            Preview.Clear();
+            Document.Editor.Regen();
+        }
         internal void ShowRoomPreview()
         {
             if(Preview.PlanningVisible)return;
+            if(!roomsWithGraphics.Contains(Room.Id))
+            {
+                Preview.Clear();
+                return;
+            }
             var items=Room.PreviewVisible && Room.Candidates.Count>0?Room.Candidates[Room.SelectedCandidate].Items:Enumerable.Empty<Placement>();
             Preview.Show(this,items);
+            if(Room.Boundary!=null && WitnessRoom==Room.Id && WitnessPath!=null && WitnessPath.Count>1)
+            {
+                var line=CadGeometry.Polyline(WitnessPath,Room.Boundary.Frame,1);
+                line.Closed=false;Preview.Overlay(line);
+            }
         }
         internal void Edit(Action<Transaction> action)
         {
             WitnessPath=null;
             string snapshot=Serialization.Write(Project);
+            var previews=new HashSet<string>(Project.Rooms.Where(room=>room.PreviewVisible).Select(room=>room.Id));
             Writing=true;
             try
             {
                 using(var transaction=Document.Database.TransactionManager.StartTransaction())
                 {
-                    action(transaction);Store.Project(Document.Database,Project,transaction);transaction.Commit();
+                    action(transaction);
+                    string projectData=Store.SaveProject(Document.Database,Project,transaction);
+                    transaction.Commit();
+                    saved=projectData;
                 }
-                saved=Store.Pack(Project);
             }
-            catch{Project=Serialization.Read<Project>(snapshot);throw;}
+            catch
+            {
+                Project=Serialization.Read<Project>(snapshot);
+                foreach(var room in Project.Rooms)room.PreviewVisible=previews.Contains(room.Id);
+                throw;
+            }
             finally{Writing=false;Dirty=true;}
         }
         internal void Save()=>Edit(_=>{});

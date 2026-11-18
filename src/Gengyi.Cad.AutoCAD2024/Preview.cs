@@ -18,48 +18,59 @@ namespace Gengyi.Cad.AutoCAD2024
         internal long PlanningRevision{get;private set;}
         internal string PlanningSignature{get;private set;}="";
         internal string PlanningRoomId{get;private set;}="";
+        internal bool HasGraphics=>entities.Count>0;
         internal void Overlay(Entity entity)
-        {
-            entities.Add(entity);
-            TransientManager.CurrentTransientManager.AddTransient(entity,TransientDrawingMode.DirectShortTerm,128,new IntegerCollection());
-        }
-        internal void Show(Session session,IEnumerable<Placement> items)
-        {
-            Clear();if(session.Room.Boundary==null)return;
-            ShowItems(session,session.Room,items);
-            var room=session.Room;
-            foreach(var door in room.Doors)
-                try
-                {
-                    var zone=RoomAccess.Landing(room.Boundary,door,room.Options.WalkWidthMm);
-                    short color=door.Side==DoorSide.Clean?(short)3:(short)4;
-                    Overlay(CadGeometry.Polyline(zone,room.Boundary.Frame,color));
-                    var opening=CadGeometry.Polyline(new[]{door.Start,door.End},room.Boundary.Frame,color);
-                    opening.Closed=false;Overlay(opening);
-                }
-                catch(ArgumentException){ /* Report invalid doors in the room statistics. */ }
-            foreach(var region in room.Passages.Where(r=>r.Points.Count>=3))
-                Overlay(CadGeometry.Polyline(region.Points,room.Boundary.Frame,6));
-        }
-        private void ShowItems(Session session,Room room,IEnumerable<Placement> items)
         {
             try
             {
-                using(var transaction=session.Document.Database.TransactionManager.StartOpenCloseTransaction())
+                if(!TransientManager.CurrentTransientManager.AddTransient(entity,TransientDrawingMode.DirectShortTerm,128,new IntegerCollection()))
+                    throw new InvalidOperationException("AutoCAD 无法注册临时图形。");
+                entities.Add(entity);
+            }
+            catch
+            {
+                entity.Dispose();
+                throw;
+            }
+        }
+        internal void Show(Session session,IEnumerable<Placement> items)
+        {
+            Clear();
+            var room=session.Room;
+            var boundary=room.Boundary;
+            if(boundary==null)return;
+            try
+            {
+                ShowItems(session,room,items);
+                foreach(var door in room.Doors)
                 {
-                    foreach(var item in items)
-                    {
-                        Entity entity;
-                        try{entity=Blocks.Create(session.Document.Database,transaction,room,item,Blocks.Mapping(session,item),false);}
-                        catch(ArgumentException){entity=CadGeometry.Polyline(Gengyi.Core.Geometry.Outline(item),room.Boundary!.Frame,1);}
-                        entities.Add(entity);
-                        TransientManager.CurrentTransientManager.AddTransient(entity,TransientDrawingMode.DirectShortTerm,128,new IntegerCollection());
-                        foreach(var text in Blocks.Labels(session.Document.Database,room,item))Overlay(text);
-                    }
-                    transaction.Commit();
+                    List<V2> zone;
+                    try{zone=RoomAccess.Landing(boundary,door,room.Options.WalkWidthMm);}
+                    catch(ArgumentException){continue;} // Statistics report unusable doors.
+                    short color=door.Side==DoorSide.Clean?(short)3:(short)4;
+                    Overlay(CadGeometry.Polyline(zone,boundary.Frame,color));
+                    var opening=CadGeometry.Polyline(new[]{door.Start,door.End},boundary.Frame,color);
+                    opening.Closed=false;Overlay(opening);
                 }
+                foreach(var region in room.Passages.Where(r=>r.Points.Count>=3))
+                    Overlay(CadGeometry.Polyline(region.Points,boundary.Frame,6));
             }
             catch{Clear();throw;}
+        }
+        private void ShowItems(Session session,Room room,IEnumerable<Placement> items)
+        {
+            using(var transaction=session.Document.Database.TransactionManager.StartOpenCloseTransaction())
+            {
+                foreach(var item in items)
+                {
+                    Entity entity;
+                    try{entity=Blocks.Create(session.Document.Database,transaction,room,item,Blocks.Mapping(session,item),false);}
+                    catch(ArgumentException){entity=CadGeometry.Polyline(Gengyi.Core.Geometry.Outline(item),room.Boundary!.Frame,1);}
+                    Overlay(entity);
+                    foreach(var text in Blocks.Labels(session.Document.Database,room,item))Overlay(text);
+                }
+                transaction.Commit();
+            }
         }
         internal void ShowPlanning(Session session,RectangleEstimate estimate,Boundary boundary,bool rotated,string signature)
         {

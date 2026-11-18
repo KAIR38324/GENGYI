@@ -310,7 +310,7 @@ namespace Gengyi.Core
         public List<Candidate> Candidates { get; set; } = new List<Candidate>();
         public int SelectedCandidate { get; set; }
         public List<Placement> Placed { get; set; } = new List<Placement>();
-        public bool PreviewVisible { get; set; }
+        [JsonIgnore] public bool PreviewVisible { get; set; }
         public bool Stale { get; set; }
         public string ConstraintIssue { get; set; } = "";
         public List<string> AnnotationHandles { get; set; } = new List<string>();

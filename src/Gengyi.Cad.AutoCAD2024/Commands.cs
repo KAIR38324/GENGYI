@@ -16,23 +16,35 @@ namespace Gengyi.Cad.AutoCAD2024
 {
     public sealed class Commands
     {
-        internal static void Run(Action<Session> action)
+        internal static void Run(Action<Session> action,bool hideGraphicsAfter=false)
         {
             Session? session=null;
-            try{session=Host.Active;session.Refresh();action(session);session.Refresh();}
+            bool completed=false;
+            try
+            {
+                session=Host.Active;
+                session.Refresh();
+                action(session);
+                completed=true;
+                session.Refresh();
+            }
             catch(Cancelled){session?.Document.Editor.WriteMessage("\n已取消，未提交当前操作。");}
-            catch(System.Exception ex){session?.Document.Editor.WriteMessage("\nGENGYI："+ex.Message);}
+            catch(System.Exception ex)
+            {
+                var prefix=completed?"操作已完成，刷新图纸状态失败：":"GENGYI：";
+                session?.Document.Editor.WriteMessage("\n"+prefix+ex.Message);
+            }
             finally
             {
                 if(session!=null)
                 {
-                    Host.Panel?.Update(session);
-                    try{session.ShowRoomPreview();}
-                    catch(System.Exception ex){session.Document.Editor.WriteMessage("\n预览未显示："+ex.Message);}
-                    if(!session.Preview.PlanningVisible && session.WitnessPath!=null && session.WitnessPath.Count>1 && session.WitnessRoom==session.Room.Id)
+                    try
                     {
-                        var line=CadGeometry.Polyline(session.WitnessPath,session.Room.Boundary!.Frame,1);line.Closed=false;session.Preview.Overlay(line);
+                        if(hideGraphicsAfter)session.HideRoomGraphics();
+                        else session.ShowRoomPreview();
                     }
+                    catch(System.Exception ex){session.Document.Editor.WriteMessage("\n临时图形刷新失败："+ex.Message);}
+                    Host.Panel?.Update(session);
                 }
             }
         }
@@ -45,7 +57,6 @@ namespace Gengyi.Cad.AutoCAD2024
             if(value.Status!=PromptStatus.OK)throw new Cancelled();
             if(!s.Project.Rooms.Any(r=>r.Id==value.StringResult))throw new ArgumentException("未知房间实例。");
             s.Preview.Clear();s.Edit(_=>s.Project.CurrentRoomId=value.StringResult);
-            if(s.Room.PreviewVisible && s.Room.Candidates.Count>0)s.Preview.Show(s,s.Room.Candidates[Math.Min(s.Room.SelectedCandidate,s.Room.Candidates.Count-1)].Items);
         });
         [CommandMethod("GENGYI","GYNEWROOM",CommandFlags.Modal)]
         public void NewRoom()=>Run(s=>
@@ -134,7 +145,7 @@ namespace Gengyi.Cad.AutoCAD2024
                     Frame=new Frame{Origin=CadGeometry.A(origin),XAxis=CadGeometry.A(ucs.CoordinateSystem3d.Xaxis.GetNormal()),YAxis=CadGeometry.A(ucs.CoordinateSystem3d.Yaxis.GetNormal()),MillimetersPerDrawingUnit=units}};
             }
             if(boundary.Width<1 || boundary.Height<1)throw new ArgumentException("房间边界的两个方向跨度必须至少 1 mm。");
-            s.Edit(_=>BoundaryEditing.Replace(s.Room,boundary));s.Preview.Clear();
+            s.Edit(_=>BoundaryEditing.Replace(s.Room,boundary));s.EnableRoomGraphics();
             if(s.Room.Placed.Count>0)editor.WriteMessage("\n边界已更换，已有设备的位置保持不变；原预览已清除，请重新生成或检查方案。");
             editor.WriteMessage($"\n房间实际面积 {boundary.AreaM2:0.###} ㎡；外接范围 {boundary.Width:0.###} × {boundary.Height:0.###} mm。布置只使用完整房间轮廓，凹口和斜边之外均不可占用。");
             if(boundary.CurveToleranceMm>0)editor.WriteMessage("\n弧边按≤0.05mm弦误差离散，并内缩≥0.05mm作保守布置校核；显示面积来自原多段线。");
@@ -166,7 +177,7 @@ namespace Gengyi.Cad.AutoCAD2024
                 } while(next=="More");
             }
             s.Edit(_=>{room.Doors=doors;room.InvalidateCandidates();});
-            s.Preview.Clear();
+            s.EnableRoomGraphics();
         });
         [CommandMethod("GENGYI","GYPASSAGES",CommandFlags.Modal)]
         public void Passages()=>Run(s=>
@@ -184,7 +195,7 @@ namespace Gengyi.Cad.AutoCAD2024
                 throw new ArgumentException("通行保留区须位于房间内。");
             if(action=="Append")regions=s.Room.Passages.Concat(regions).GroupBy(r=>r.NativeHandle).Select(g=>g.Last()).ToList();
             s.Edit(_=>{s.Room.Passages=regions;s.Room.InvalidateCandidates();});
-            s.Preview.Clear();
+            s.EnableRoomGraphics();
         });
         [CommandMethod("GENGYI","GYOBSTACLES",CommandFlags.Modal)]
         public void Obstacles()=>Regions(false);
@@ -237,7 +248,7 @@ namespace Gengyi.Cad.AutoCAD2024
             if(CadApplication.DocumentManager.MdiActiveDocument!=s.Document)throw new Cancelled();
             s.Edit(_=>{s.Room.Candidates=result.Candidates;s.Room.SelectedCandidate=0;s.Room.PreviewVisible=result.Candidates.Count>0;s.Room.Stale=false;});
             s.Document.Editor.WriteMessage("\n"+result.Message);
-            if(result.Candidates.Count>0)s.Preview.Show(s,result.Candidates[0].Items);
+            s.EnableRoomGraphics();
         });
         [CommandMethod("GENGYI","GYPREVIEW",CommandFlags.Modal)]
         public void ShowPreview()=>Run(s=>
@@ -247,10 +258,20 @@ namespace Gengyi.Cad.AutoCAD2024
             var candidate=s.Room.Candidates[s.Room.SelectedCandidate];
             foreach(var p in candidate.Items)Layout.ResolveMapping(s.Project,p);
             candidate.Statistics=Validation.Evaluate(s.Project,s.Room,candidate.Items);s.Room.PreviewVisible=true;
-            s.Preview.Show(s,candidate.Items);
+            s.EnableRoomGraphics();
         });
         [CommandMethod("GENGYI","GYCANCEL",CommandFlags.Modal)]
-        public void CancelPreview()=>Run(s=>{s.Preview.Clear();s.Edit(_=>s.Room.PreviewVisible=false);});
+        public void CancelPreview()
+        {
+            var session=Host.Active;
+            try
+            {
+                session.HideRoomGraphics();
+                session.Document.Editor.WriteMessage("\n已关闭柜体预览、出入口、通行区和检查标记。用 GYPREVIEW 可重新显示候选。");
+                Host.Panel?.Update(session);
+            }
+            catch(System.Exception ex){session.Document.Editor.WriteMessage("\n临时图形清理失败："+ex.Message);}
+        }
         [CommandMethod("GENGYI","GYCOMMIT",CommandFlags.Modal)]
         public void Commit()=>Run(s=>
         {
@@ -304,8 +325,8 @@ namespace Gengyi.Cad.AutoCAD2024
                 title.TransformBy(CadGeometry.ToWorld(s.Room.Boundary!.Frame));model.AppendEntity(title);tx.AddNewlyCreatedDBObject(title,true);
                 s.Room.AnnotationHandles.Add(title.Handle.ToString());s.Room.PreviewVisible=false;
             });
-            s.Preview.Clear();s.Document.Editor.WriteMessage("\n当前房间已用原生块参照入图。一次 UNDO 可撤销本次命令；校核状态仍以实际检查为准。");
-        });
+            s.Document.Editor.WriteMessage("\n当前房间已用原生块参照入图。一次 UNDO 可撤销本次命令；校核状态仍以实际检查为准。");
+        },hideGraphicsAfter:true);
         [CommandMethod("GENGYI","GYREBUILD",CommandFlags.Modal)]
         public void Reconstruct()=>Run(s=>
         {
@@ -316,7 +337,8 @@ namespace Gengyi.Cad.AutoCAD2024
                 Blocks.Reconstruct(s,tx,s.Room.Candidates[s.Room.SelectedCandidate].Items);
                 foreach(var c in s.Room.Candidates)foreach(var p in c.Items)Layout.ResolveMapping(s.Project,p);
             });
-            s.Preview.Show(s,s.Room.Candidates[s.Room.SelectedCandidate].Items);
+            s.Room.PreviewVisible=true;
+            s.EnableRoomGraphics();
         });
         [CommandMethod("GENGYI","GYDRAG",CommandFlags.Modal)]
         public void Drag()=>Run(s=>
@@ -444,7 +466,7 @@ namespace Gengyi.Cad.AutoCAD2024
             s.WitnessPath=null;
             if(s.Room.Mode==RoomMode.Shoe && stats.Checks["walking_without_crossing"]==CheckState.Fail)
             {
-                s.Preview.Clear();s.WitnessPath=BypassPath.Find(s.Room,scene);s.WitnessRoom=s.Room.Id;
+                s.EnableRoomGraphics();s.WitnessPath=BypassPath.Find(s.Room,scene);s.WitnessRoom=s.Room.Id;
                 s.Document.Editor.WriteMessage(s.WitnessPath.Count>1?"\n红色临时线为满足当前人员宽度的绕行路径。":"\n连续拓扑已确认可绕行；显示用采样在预算内未找到路径，不能因此判通过。");
             }
         });

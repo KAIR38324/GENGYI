@@ -485,7 +485,7 @@ namespace Gengyi.Cad.AutoCAD2024
                 if(candidateSignature!=boundRoomId+cs){candidates.Items.Clear();foreach(var c in s.Room.Candidates)candidates.Items.Add(c);candidateSignature=boundRoomId+cs;}
                 if(s.Room.Candidates.Count>0)candidates.SelectedIndex=Math.Max(0,Math.Min(s.Room.SelectedCandidate,s.Room.Candidates.Count-1));
                 var selected=s.Room.Candidates.Count==0?null:s.Room.Candidates[s.Room.SelectedCandidate];bool hasCandidate=selected!=null;
-                preview.Enabled=commit.Enabled=hasCandidate;cancel.Enabled=s.Room.PreviewVisible;check.Enabled=boundary!=null;
+                preview.Enabled=commit.Enabled=hasCandidate;cancel.Enabled=s.Preview.HasGraphics || s.Room.PreviewVisible;check.Enabled=boundary!=null;
                 if(selected!=null)
                 {
                     string counts=string.Join(" · ",selected.Items.GroupBy(i=>i.EquipmentId).Select(g=>EquipmentPresentation.Describe(g.First(),s.Room.Options).Title+" × "+g.Count()));
