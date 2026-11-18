@@ -53,7 +53,8 @@ namespace Gengyi.Core
                 if (clock.ElapsedMilliseconds > 5000) { output.TimedOut = true; break; }
                 if (signatures.Add(Signature(draft.Candidate.Items,hasAccess))) rough.Add(draft);
             }
-            rough = rough.OrderBy(d => Math.Max(0, target - d.Candidate.Items.Sum(p => Capacity.Nominal(p, room.Options))))
+            rough = rough.OrderByDescending(d=>d.Candidate.ShoeClosureContacts)
+                .ThenBy(d => Math.Max(0, target - d.Candidate.Items.Sum(p => Capacity.Nominal(p, room.Options))))
                 .ThenBy(d => Math.Abs(d.Candidate.Items.Sum(p => Capacity.Nominal(p, room.Options)) - target))
                 .ThenBy(d => d.Candidate.Items.Count).ToList();
             // Limit precise Boolean geometry work, retaining different families and orientations.
@@ -92,6 +93,7 @@ namespace Gengyi.Core
             output.Candidates = output.Candidates.GroupBy(c=>Signature(c.Items,hasAccess)).Select(g=>g.First())
                 .OrderBy(c => c.Statistics.Checks["geometry"] == CheckState.Fail ? 1 : 0)
                 .ThenBy(c => c.Statistics.Checks["boundary"] == CheckState.Fail ? 1 : 0)
+                .ThenBy(c => c.Statistics.Checks["workflow_with_crossing"]==CheckState.Pass?0:1)
                 .ThenBy(c => c.Statistics.ConditionalDeficit)
                 .ThenBy(c => shoe ? Math.Max(0,target-c.Statistics.Nominal) : 0)
                 .ThenBy(c => c.Statistics.Blocked)
@@ -143,7 +145,7 @@ namespace Gengyi.Core
             {
                 double width = (vertical ? b.Height : b.Width) - 2 * margin;
                 double height = (vertical ? b.Width : b.Height) - 2 * margin;
-                foreach (int connector in room.Options.ShoeCapacities.Select(c => c / 3 * 250).Distinct())
+                foreach (int connector in room.Options.ShoeCapacities.Select(c => c / 3 * 250).Distinct().Where(mm=>mm>=room.Options.PlanningAisleFor(RoomMode.Shoe)))
                 {
                     int maxRows = Math.Min(24, (int)Math.Floor((height + connector) / (Equipment.ShoeDepthMm + connector)));
                     for (int rows = 3; rows <= maxRows; rows++)
@@ -177,20 +179,24 @@ namespace Gengyi.Core
 
         // Shared by pre-boundary area planning and the actual rectangle solver.
         // R650 is the current quarter-sector assumption, not an original block.
-        internal static Candidate ShoeTemplate(Room room, int rows, double run, int connector, List<int> chain, int stackedTarget = 0, bool firstTurnRight = true)
+        internal static Candidate ShoeTemplate(Room room, int rows, double run, int connector, List<int> chain, int stackedTarget = 0, bool firstTurnRight = true,
+            List<int>? firstRow=null,List<int>? lastRow=null)
         {
             var c = new Candidate { Family = $"S形{rows}排/{connector}连接" };
             double margin = room.Options.ShoeBoundaryMm;
             for (int row = 0; row < rows; row++)
             {
                 double x = margin + Equipment.CornerRadiusMm, y = margin + row * (Equipment.ShoeDepthMm + connector);
-                foreach (int cap in chain)
+                var rowChain=row==0?firstRow??chain:row==rows-1?lastRow??chain:chain;
+                bool right=(row%2==0)==firstTurnRight;
+                bool rightAligned=row==0?right:row==rows-1 && !right;
+                if(rightAligned)x+=run-rowChain.Sum(cap=>cap/3*250);
+                foreach (int cap in rowChain)
                 {
                     c.Items.Add(Place(room, "S" + cap, x, y, group: c.Id));
                     x += cap / 3 * 250;
                 }
                 if (row == rows - 1) continue;
-                bool right = (row % 2 == 0) == firstTurnRight;
                 double cx = right ? margin + Equipment.CornerRadiusMm + run : margin + Equipment.CornerRadiusMm;
                 c.Items.Add(Place(room, Equipment.CornerId, cx, y + Equipment.ShoeDepthMm, right ? 270 : 180, group: c.Id));
                 c.Items.Add(Place(room, "S" + (connector * 12 / 1000), right ? cx + Equipment.CornerRadiusMm : cx, y + Equipment.ShoeDepthMm, 90, group: c.Id));

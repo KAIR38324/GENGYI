@@ -282,6 +282,9 @@ namespace Gengyi.Core
     public sealed class Candidate
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        [JsonIgnore] internal int ShoeClosureContacts { get; set; }
+        public bool AppendToPlaced { get; set; }
+        public IReadOnlyList<Placement> Scene(Room room) => AppendToPlaced?room.Placed.Concat(Items).ToList():Items;
         public string Family { get; set; } = "";
         public List<Placement> Items { get; set; } = new List<Placement>();
         public Statistics Statistics { get; set; } = new Statistics();

@@ -60,7 +60,7 @@ namespace Gengyi.Cad.AutoCAD2024
         private readonly TextBox statistics=new TextBox{Height=260,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical,BorderStyle=BorderStyle.FixedSingle,BackColor=Color.White};
         private readonly Label areaSummary=Text("正在计算尺寸建议…",true),areaDetail=Text(""),assumptions=Text(""),boundaryInfo=Text("尚未确定房间范围"),sourceInfo=Text(""),candidateDetail=Text(""),footerTitle=Text("先选房间，输入人数",true),footerDetail=Text("面积建议会在定框前显示");
         private readonly Label pendingInfo=Text("修改人数会立即更新面积建议；操作前自动保存参数。"),stackingStatus=Text(""),planningPreviewStatus=Text(""),workflowHint=Text(""),inputError=Text(""),legacyPeople=Text(""),accessInfo=Text("");
-        private readonly Button nextStep,planPreview,suggested,manualRectangle,existingRectangle,generate,commit,check,preview,cancel,obstacles,doors,passages,closures,rebuild,bind;
+        private readonly Button nextStep,planPreview,suggested,manualRectangle,existingRectangle,generate,track,commit,check,preview,cancel,obstacles,doors,passages,closures,rebuild,bind;
         private readonly TableLayoutPanel stackingSettings,shoeSettings,hangerSettings;
         private readonly TableLayoutPanel sizingSection,boundarySection,schemeSection;
         private readonly TabPage workflowPage;
@@ -129,7 +129,7 @@ namespace Gengyi.Cad.AutoCAD2024
 
             var schemes=Card(work,"5  在实际边界内生成、调整、入图","先完成设置预览并选择边界，再比较实际布置方案。",boldFont);
             schemeSection=schemes;
-            generate=CommandButton("生成布置方案", "GYGENERATE",true);Add(schemes,generate);Add(schemes,workflowHint);Add(schemes,candidates);Add(schemes,candidateDetail);
+            generate=CommandButton("生成布置方案", "GYGENERATE",true);track=CommandButton("沿轨迹布置", "GYTRACK");ButtonRow(schemes,generate,track);Add(schemes,workflowHint);Add(schemes,candidates);Add(schemes,candidateDetail);
             preview=CommandButton("显示所选方案", "GYPREVIEW");cancel=CommandButton("取消预览", "GYCANCEL");ButtonRow(schemes,preview,cancel);
             sourceInfo.Padding=new Padding(8);sourceInfo.BackColor=Color.FromArgb(255,246,226);Add(schemes,sourceInfo);
             rebuild=CommandButton("使用图片重建块（待比对）", "GYREBUILD");bind=CommandButton("绑定原 CAD 设备块", "GYBLOCK");Add(schemes,rebuild);Add(schemes,bind);
@@ -288,7 +288,7 @@ namespace Gengyi.Cad.AutoCAD2024
             catch(System.Exception ex)
             {
                 estimate=null;planningPreviewCurrent=false;rectangleChoices.Items.Clear();sketch.ShowPlan(null);areaSummary.Text="请先修正人数或参数";areaDetail.Text="";inputError.Text=ex.Message;
-                planPreview.Enabled=suggested.Enabled=manualRectangle.Enabled=existingRectangle.Enabled=generate.Enabled=nextStep.Enabled=preview.Enabled=commit.Enabled=false;
+                planPreview.Enabled=suggested.Enabled=manualRectangle.Enabled=existingRectangle.Enabled=generate.Enabled=track.Enabled=nextStep.Enabled=preview.Enabled=commit.Enabled=false;
             }
         }
         private void ShowSelectedEstimate()
@@ -307,10 +307,13 @@ namespace Gengyi.Cad.AutoCAD2024
             existingRectangle.Enabled=manualRectangle.Enabled=s!=null && planningPreviewCurrent;
             suggested.Enabled=s!=null && planningPreviewCurrent && hasOptions;
             generate.Enabled=s?.Room.Boundary!=null && planningPreviewCurrent && s.Room.ConstraintIssue.Length==0;
-            preview.Enabled=s!=null && s.Room.Candidates.Count>0 && planningPreviewCurrent && !inputsDirty;
-            candidates.Enabled=planningPreviewCurrent && !inputsDirty;
-            commit.Enabled=candidateCanCommit && planningPreviewCurrent && !inputsDirty;
-            rebuild.Enabled=bind.Enabled=planningPreviewCurrent && !inputsDirty;
+            track.Enabled=s?.Room.Boundary!=null && s.Room.Mode!=RoomMode.SecondChange && s.Room.ConstraintIssue.Length==0;
+            bool trackDraft=(candidates.SelectedItem as Candidate)?.AppendToPlaced==true;
+            bool ready=planningPreviewCurrent || trackDraft;
+            preview.Enabled=s!=null && s.Room.Candidates.Count>0 && ready && !inputsDirty;
+            candidates.Enabled=ready && !inputsDirty;
+            commit.Enabled=candidateCanCommit && ready && !inputsDirty;
+            rebuild.Enabled=bind.Enabled=ready && !inputsDirty;
             planningPreviewStatus.Text=planningPreviewCurrent?(s?.Room.Boundary==null?"预览已完成 · 现在可以选择自己的房间边界。":"预览已完成 · 已选实际边界，可继续生成和调整。"):
                 "先点击上方预览；修改人数、叠放、参数或切换参考方案后，需要重新预览。";
             planningPreviewStatus.ForeColor=planningPreviewCurrent?Color.FromArgb(39,119,77):Blue;
@@ -337,7 +340,8 @@ namespace Gengyi.Cad.AutoCAD2024
             if(command=="GYGENERATE" || command=="GYPREVIEW" || command=="GYCOMMIT")
             {
                 RefreshEstimate();
-                if(!planningPreviewCurrent){StartPlanningPreview();return false;}
+                if(!planningPreviewCurrent && (command=="GYGENERATE" || (candidates.SelectedItem as Candidate)?.AppendToPlaced!=true))
+                {StartPlanningPreview();return false;}
                 if(command=="GYGENERATE" && !generate.Enabled)return false;
                 if(command=="GYCOMMIT" && !commit.Enabled)return false;
             }
@@ -517,7 +521,8 @@ namespace Gengyi.Cad.AutoCAD2024
                     sourceInfo.Visible=false;rebuild.Visible=bind.Visible=false;
                 }
                 var stats=s.Room.PreviewVisible && selected!=null?selected.Statistics:s.Room.Statistics;
-                SetStatistics(stats,s.Room.PreviewVisible?"所选方案预览":"已入图设备");
+                if(s.Room.PreviewVisible && selected?.AppendToPlaced==true)SetTrackStatistics(s.Room,selected,"轨迹预览");
+                else SetStatistics(stats,s.Room.PreviewVisible?"所选方案预览":"已入图设备");
                 RefreshEstimate();
                 observedPlanningPreview=s.Preview;observedPlanningRevision=s.Preview.PlanningRevision;
                 bool newlyPlanned=sameContext && planningPreviewCurrent && (completedPlanningDisplay || !wasPlanningPreviewCurrent || previousPlanningSignature!=s.Room.PlanningPreviewSignature || previousPlanningOption!=s.Room.PlanningPreviewOption);
@@ -536,6 +541,26 @@ namespace Gengyi.Cad.AutoCAD2024
             string detail=$"名义 {c.Statistics.Nominal} / 有效 {(c.Statistics.Effective.HasValue?c.Statistics.Effective.Value.ToString():"待核")} / 条件缺口 {c.Statistics.ConditionalDeficit}";
             TextRenderer.DrawText(e.Graphics,detail,surface.Font,new Rectangle(e.Bounds.X+8,e.Bounds.Y+27,e.Bounds.Width-16,19),Muted,TextFormatFlags.EndEllipsis|TextFormatFlags.NoPadding);
             e.DrawFocusRectangle();
+        }
+        internal void SetTrackStatistics(Room room,Candidate candidate,string note)
+        {
+            var placed=room.Statistics;
+            var combined=candidate.Statistics;
+            int estimate=candidate.Items.Sum(item=>combined.GeometricByInstance.TryGetValue(item.Id,out int n)?n:0);
+            footerTitle.Text=$"目标 {combined.Target} · 已入图 {placed.Nominal} · 现有几何可用 {placed.GeometricAvailable}";
+            footerDetail.Text=$"目前还差 {placed.ConditionalDeficit} 位 · 本次预计 +{estimate} 位 · 预计还差 {combined.ConditionalDeficit} 位";
+            if(room.Mode==RoomMode.Shoe)
+            {
+                int increment=candidate.Items.Count(item=>item.EquipmentId=="S48")*24;
+                int nominal=candidate.Items.Sum(item=>item.Equipment.Capacity);
+                footerDetail.Text+=$"\r\n轨迹名义单层 {nominal-increment} 位 · 叠放 +{increment} 位";
+            }
+            bool conflict=RoomAccess.Failed(combined) || combined.Checks["geometry"]==CheckState.Fail ||
+                combined.Checks["boundary"]==CheckState.Fail || combined.Checks[LockerAisles.CheckKey]==CheckState.Fail;
+            if(conflict)note=combined.Issues.FirstOrDefault()?.Message??"请调整红色设备的位置。";
+            if(note.Length>0)footerDetail.Text+="\r\n"+note;
+            footerDetail.ForeColor=conflict?Color.Firebrick:Muted;
+            statistics.Text=footerTitle.Text+"\r\n"+footerDetail.Text;
         }
         internal void SetStatistics(Statistics stats,string prefix="拖动预检")
         {

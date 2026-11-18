@@ -21,6 +21,7 @@ namespace Gengyi.Core
                 return result;
             }
             var boundary = Geometry.RoomPolygon(room.Boundary);
+            var fitBoundary=room.Mode==RoomMode.FirstChange?boundary.Buffer(.00001,1):boundary;
             result.BoundaryM2 = room.Boundary.AreaM2;
             var physical = new List<Geo>();
             var invalid = new HashSet<string>();
@@ -41,6 +42,13 @@ namespace Gengyi.Core
             var clearances = RoomAccess.Clearances(room,accessIssues);
             result.Issues.AddRange(accessIssues);
             bool clearancePass = accessIssues.Count==0;
+            foreach(var passage in clearances.Where(z=>z.Door==null))
+                if(passage.Shape.Intersection(blockUnion).Area>Geometry.AreaTolerance)
+                {
+                    clearancePass=false;
+                    Issue(result,"PASSAGE_FIXED_BLOCKER","",passage.Label+"与固定障碍重叠，请核对通行轮廓。");
+                }
+            var lockerAngles=room.Mode==RoomMode.FirstChange?Layout.LockerAngles(room.Boundary):Array.Empty<double>();
             bool doorsPass = clearances.Count(z=>z.Door!=null)==room.Doors.Count;
             bool geometryPass = true, boundaryPass = true, sourcePass = true, cornerApprox = false;
             for (int i = 0; i < items.Count; i++)
@@ -77,12 +85,13 @@ namespace Gengyi.Core
                         $"设备源块不符合当前{Equipment.ShoeDepthMm:0}mm占地/{Equipment.ShoeDuctMm:0}mm中间通风道及R{Equipment.CornerRadiusMm:0}转角参数；保留旧实体原状，请重新绑定或按新参数重建，不能按新尺寸计为有效。");
                 }
                 if (item.NativeGeometryUnverified || !contextValid || Math.Abs(item.ScaleX - 1) > 1e-6 || Math.Abs(item.ScaleY - 1) > 1e-6 ||
-                    (room.Options.Orthogonal && !Geometry.Orthogonal(item.Rotation)))
+                    (room.Options.Orthogonal && !Geometry.Orthogonal(item.Rotation) &&
+                        !(item.EquipmentId=="LOCKER12" && lockerAngles.Any(angle=>Geometry.Orthogonal(item.Rotation-angle)))))
                 {
                     invalid.Add(item.Id); geometryPass = false;
                     Issue(result, "TRANSFORM_INVALID", item.Id, item.NativeIssue.Length>0?item.NativeIssue:"设备被缩放、镜像、偏离正交或现场约束失效；不能按原柜型认定容量。");
                 }
-                if (!boundary.Covers(shape) || (!shape.IsEmpty && shape.Intersection(blockUnion).Area > Geometry.AreaTolerance))
+                if (!fitBoundary.Covers(shape) || (!shape.IsEmpty && shape.Intersection(blockUnion).Area > Geometry.AreaTolerance))
                 {
                     invalid.Add(item.Id); geometryPass = false;
                     Issue(result, "OUTSIDE_OR_OBSTACLE", item.Id, "柜体越界或与柱、门口/不可占区、固定封闭物重叠。");
@@ -130,8 +139,7 @@ namespace Gengyi.Core
             var blockers=cabinetUnion.Union(blockUnion);
             var free = boundary.Difference(blockers);
             var components = Geometry.Components(free);
-            var bodyFree=boundary.Buffer(-room.Options.WalkWidthMm/2,32).Difference(blockers.Buffer(room.Options.WalkWidthMm/2,32));
-            var walking=Geometry.Components(bodyFree);
+            var walking=RoomAccess.WalkingSpace(boundary,blockers,room.Options.WalkWidthMm);
             var dirtyAreas = new HashSet<int>();
             var cleanAreas = new HashSet<int>();
             var dirtyWalks = new HashSet<int>();
@@ -140,10 +148,8 @@ namespace Gengyi.Core
             {
                 var door = zone.Door!;
                 var probe = zone.Probe!;
-                int area = Geometry.Component(components,probe), walk = Geometry.Component(walking,probe);
-                bool occupied = zone.Shape.Intersection(blockers).Area>Geometry.AreaTolerance;
-                if(door.Start.Distance(door.End)+1e-6<room.Options.WalkWidthMm || occupied || area<0 || walk<0 ||
-                    walking[walk].Difference(zone.Shape).Area<=Geometry.AreaTolerance)
+                int area = Geometry.Component(components,probe);
+                if(area<0 || !RoomAccess.TryOpening(blockers,walking,door,zone.Shape,probe,room.Options.WalkWidthMm,out int walk))
                 {
                     doorsPass=false;clearancePass=false;
                     Issue(result,"DOOR_ACCESS_FAILED","",zone.Label+"的门宽或门内接入区无法连到室内步行空间，请核对门宽、障碍和柜排。");
@@ -232,7 +238,7 @@ namespace Gengyi.Core
                         {
                             double x = column * e.Length / e.Columns, width = e.Length / e.Columns;
                             double depth = room.Options.OperationDepthMm ?? room.Options.PlanningAisleMm;
-                            bool a = FrontClear(item, x, width, false, boundary, other, depth);
+                            bool a = FrontClear(item, x, width, false, fitBoundary, other, depth);
                             bool b = e.IsShoe && FrontClear(item, x, width, true, boundary, other, depth);
                             if (e.IsShoe)
                             {
@@ -243,6 +249,14 @@ namespace Gengyi.Core
                                 {
                                     var wa=Approach(item,x,width,false,depth,room.Options.WalkWidthMm,walking);
                                     var wb=Approach(item,x,width,true,depth,room.Options.WalkWidthMm,walking);
+                                    if(a && b && ca>=0 && cb>=0 && ca!=cb && item.CrossingEnabled && e.Boxes==1)
+                                        foreach(int from in wa)
+                                            foreach(int to in wb.Where(component=>component!=from))
+                                            {
+                                                if(!edges.ContainsKey(from))edges[from]=new HashSet<int>();
+                                                if(!edges.ContainsKey(to))edges[to]=new HashSet<int>();
+                                                edges[from].Add(to);edges[to].Add(from);
+                                            }
                                     bool aDirty=wa.Overlaps(dirtyWalks), bDirty=wb.Overlaps(dirtyWalks);
                                     bool aClean=wa.Overlaps(cleanWalks), bClean=wb.Overlaps(cleanWalks);
                                     reachableFront |= a && (aDirty || aClean) || b && (bDirty || bClean);
@@ -252,12 +266,6 @@ namespace Gengyi.Core
                                 }
                                 if (a && b && (!seeds || isolation && (dirtyAreas.Contains(ca) && cleanAreas.Contains(cb) ||
                                     cleanAreas.Contains(ca) && dirtyAreas.Contains(cb)))) usable += e.Levels;
-                                if (a && b && ca >= 0 && cb >= 0 && ca != cb && item.CrossingEnabled && e.Boxes == 1)
-                                {
-                                    if (!edges.ContainsKey(ca)) edges[ca] = new HashSet<int>();
-                                    if (!edges.ContainsKey(cb)) edges[cb] = new HashSet<int>();
-                                    edges[ca].Add(cb); edges[cb].Add(ca);
-                                }
                             }
                             else if (a && (!hasEntries || Approach(item,x,width,false,depth,room.Options.WalkWidthMm,walking).Overlaps(dirtyWalks)))
                             {usable+=e.Levels;reachableFront=true;}
@@ -295,7 +303,7 @@ namespace Gengyi.Core
                     }
                     return true;
                 }
-                bool crosses = seeds && ReachesEachSide(dirtyAreas,cleanAreas) && ReachesEachSide(cleanAreas,dirtyAreas);
+                bool crosses = walkSeeds && doorsPass && ReachesEachSide(dirtyWalks,cleanWalks) && ReachesEachSide(cleanWalks,dirtyWalks);
                 result.Checks["workflow_with_crossing"] = !seeds ? CheckState.RequiresInput : isolation && crosses ? CheckState.Pass : CheckState.Fail;
                 if (seeds && !crosses) Issue(result, "CROSSING_PATH_MISSING", "", "有出入口无法经允许的单层跨柜节点完成脏净转换。");
             }
@@ -332,7 +340,7 @@ namespace Gengyi.Core
             var zone = Geometry.Polygon(points);
             return boundary.Covers(zone) && zone.Intersection(other).Area <= Geometry.AreaTolerance;
         }
-        private static HashSet<int> Approach(Placement item,double x,double width,bool positive,double depth,double walkWidth,IReadOnlyList<Polygon> components)
+        internal static HashSet<int> Approach(Placement item,double x,double width,bool positive,double depth,double walkWidth,IReadOnlyList<Polygon> components)
         {
             double offset=Math.Min(Math.Max(depth/2,walkWidth/2+1),depth);
             double y=positive?item.Equipment.Depth+offset:-offset;

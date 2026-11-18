@@ -9,7 +9,8 @@ namespace Gengyi.Core
 {
     public static class Geometry
     {
-        public static readonly GeometryFactory Factory = new GeometryFactory();
+        public static readonly GeometryFactory Factory =
+            new NetTopologySuite.NtsGeometryServices(GeometryOverlay.NG).CreateGeometryFactory();
         public const double AreaTolerance = .01; // mm², arithmetic tolerance, not a construction gap.
         public static Polygon Polygon(IEnumerable<V2> points)
         {
@@ -96,18 +97,29 @@ namespace Gengyi.Core
             ? Hooks(item, options).Count : item.Equipment.Capacity;
         public static List<int>? Run(double length, IReadOnlyCollection<int> allowed)
         {
-            if (length < 0 || Math.Abs(length / 250 - Math.Round(length / 250)) > 1e-7) return null;
+            if (double.IsNaN(length) || double.IsInfinity(length) || length<0 || length>1e9 ||
+                Math.Abs(length/250-Math.Round(length/250))>1e-7) return null;
             int end = (int)Math.Round(length / 250);
-            var paths = new Dictionary<int, List<int>> { [0] = new List<int>() };
-            for (int n = 1; n <= end; n++)
-                foreach (int cap in allowed.OrderByDescending(c => c))
+            var counts=new int[end+1];
+            var last=new int[end+1];
+            var sizes=allowed.OrderByDescending(c=>c).ToArray();
+            for(int n=1;n<=end;n++)
+                foreach(int cap in sizes)
                 {
-                    int size = cap / 3;
-                    if (!paths.TryGetValue(n - size, out var prev)) continue;
-                    var next = new List<int>(prev) { cap };
-                    if (!paths.TryGetValue(n, out var current) || next.Count < current.Count) paths[n] = next;
+                    int previous=n-cap/3;
+                    if(previous<0 || previous>=n || previous!=0 && last[previous]==0)continue;
+                    int count=counts[previous]+1;
+                    if(last[n]!=0 && counts[n]<=count)continue;
+                    counts[n]=count;last[n]=cap;
                 }
-            return paths.TryGetValue(end, out var result) ? result : null;
+            if(end>0 && last[end]==0)return null;
+            var result=new List<int>(counts[end]);
+            while(end>0)
+            {
+                int cap=last[end];result.Add(cap);end-=cap/3;
+            }
+            result.Reverse();
+            return result;
         }
     }
 }

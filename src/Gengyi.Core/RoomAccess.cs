@@ -23,7 +23,7 @@ namespace Gengyi.Core
                 throw new ArgumentException("请在同一段直墙上选取两个门边点。");
             var normal = new V2(-(b.Y-a.Y)/width,(b.X-a.X)/width);
             // The opening remains full width. Extend it beyond the wall inset used for walking.
-            double depth = Math.Max(width,walkWidth+2);
+            double depth = walkWidth+2;
             var covered = room.Buffer(tolerance);
             foreach (double sign in new[] { 1.0, -1.0 })
             {
@@ -72,6 +72,18 @@ namespace Gengyi.Core
                 }
             }
             return zones;
+        }
+
+        internal static List<Polygon> WalkingSpace(Geo boundary,Geo blockers,double width) =>
+            Geometry.Components(boundary.Buffer(-width/2,32).Difference(blockers.Buffer(width/2,32)));
+
+        internal static bool TryOpening(Geo blockers,IReadOnlyList<Polygon> walking,DoorOpening door,Geo zone,V2 probe,
+            double width,out int component)
+        {
+            component=Geometry.Component(walking,probe);
+            return door.Start.Distance(door.End)+.000001>=width && component>=0 &&
+                zone.Intersection(blockers).Area<=Geometry.AreaTolerance &&
+                walking[component].Difference(zone).Area>Geometry.AreaTolerance;
         }
 
         internal static Geo ReservedSpace(Room room)

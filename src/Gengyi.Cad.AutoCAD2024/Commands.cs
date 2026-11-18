@@ -250,6 +250,42 @@ namespace Gengyi.Cad.AutoCAD2024
             s.Document.Editor.WriteMessage("\n"+result.Message);
             s.EnableRoomGraphics();
         });
+        [CommandMethod("GENGYI","GYTRACK",CommandFlags.Modal)]
+        public void Track()=>Run(s=>
+        {
+            NeedBoundary(s);
+            if(s.Room.Mode==RoomMode.SecondChange)throw new ArgumentException("轨迹布置支持换鞋间和一更。");
+            if(s.Room.ConstraintIssue.Length>0)throw new ArgumentException(s.Room.ConstraintIssue);
+            if(Host.Panel==null){Host.Panel=new Palette();Host.Panel.Show(s);}
+            var editor=s.Document.Editor;
+            var frame=s.Room.Boundary!.Frame;
+            var start=CadGeometry.Local(frame,CadGeometry.Point(editor,
+                s.Room.Mode==RoomMode.Shoe?"指定鞋柜中心线起点：":"指定衣柜柜背线起点，默认布在行进方向左侧："));
+            s.Preview.Show(s,Array.Empty<Placement>());
+            using(var jig=new TrackJig(s,start))
+            {
+                Candidate candidate;
+                while(true)
+                {
+                    var p=editor.Drag(jig);
+                    if(p.Status==PromptStatus.Keyword){jig.ApplyKeyword(p.StringResult);continue;}
+                    if(jig.Finished || p.Status==PromptStatus.None)
+                    {
+                        try{candidate=jig.Complete();break;}
+                        catch(ArgumentException ex){editor.WriteMessage("\n"+ex.Message+" 可继续画或用 Undo 撤回上一点。");continue;}
+                    }
+                    if(p.Status!=PromptStatus.OK)throw new Cancelled();
+                    if(!jig.AcceptPoint())editor.WriteMessage("\n请选择能放下完整柜体的下一点，或回车结束。");
+                }
+                s.Edit(_=>
+                {
+                    s.Room.Candidates.Add(candidate);s.Room.SelectedCandidate=s.Room.Candidates.Count-1;
+                    s.Room.PreviewVisible=true;s.Room.Stale=false;
+                });
+                s.EnableRoomGraphics();
+                editor.WriteMessage("\n轨迹已成为可预览候选。检查后用确认入图追加到当前房间。");
+            }
+        });
         [CommandMethod("GENGYI","GYPREVIEW",CommandFlags.Modal)]
         public void ShowPreview()=>Run(s=>
         {
@@ -257,7 +293,7 @@ namespace Gengyi.Cad.AutoCAD2024
             s.Room.SelectedCandidate=Math.Max(0,Math.Min(s.Room.Candidates.Count-1,s.Room.SelectedCandidate));
             var candidate=s.Room.Candidates[s.Room.SelectedCandidate];
             foreach(var p in candidate.Items)Layout.ResolveMapping(s.Project,p);
-            candidate.Statistics=Validation.Evaluate(s.Project,s.Room,candidate.Items);s.Room.PreviewVisible=true;
+            candidate.Statistics=Validation.Evaluate(s.Project,s.Room,candidate.Scene(s.Room));s.Room.PreviewVisible=true;
             s.EnableRoomGraphics();
         });
         [CommandMethod("GENGYI","GYCANCEL",CommandFlags.Modal)]
@@ -284,8 +320,9 @@ namespace Gengyi.Cad.AutoCAD2024
             foreach(var p in chosen.Items){Layout.ResolveMapping(s.Project,p);Blocks.Mapping(s,p);}
             LockerAisles.RequireValid(s.Room,chosen.Items);
             chosen.Statistics=Validation.Evaluate(s.Project,s.Room,chosen.Items);
-            if(s.Room.Placed.Any(p=>p.Locked))throw new ArgumentException("当前房间含锁定设备，请先解锁后替换方案。");
-            string action=s.Room.Placed.Count==0?"Replace":CadGeometry.Keyword(s.Document.Editor,"当前房间已有设备","Replace Append Cancel","Replace");
+            string action=chosen.AppendToPlaced?"Append":s.Room.Placed.Count==0?"Replace":
+                CadGeometry.Keyword(s.Document.Editor,"当前房间已有设备","Replace Append Cancel","Replace");
+            if(action=="Replace" && s.Room.Placed.Any(p=>p.Locked))throw new ArgumentException("当前房间含锁定设备，请先解锁后替换方案。");
             if(action=="Cancel")throw new Cancelled();
             var finalItems=chosen.Items;
             if(action=="Append")
@@ -319,11 +356,20 @@ namespace Gengyi.Cad.AutoCAD2024
                     Blocks.Create(s.Document.Database,tx,s.Room,p,Blocks.Mapping(s,p),true);
                     s.Room.Placed.Add(p);
                 }
-                var table=(BlockTable)tx.GetObject(s.Document.Database.BlockTableId,OpenMode.ForRead);
-                var model=(BlockTableRecord)tx.GetObject(table[BlockTableRecord.ModelSpace],OpenMode.ForWrite);
-                var title=new DBText{TextString=s.Room.Name,Height=200,Position=new Point3d(0,-350,0),LayerId=Blocks.Layer(s.Document.Database,tx,"GY_TEXT",7)};
-                title.TransformBy(CadGeometry.ToWorld(s.Room.Boundary!.Frame));model.AppendEntity(title);tx.AddNewlyCreatedDBObject(title,true);
-                s.Room.AnnotationHandles.Add(title.Handle.ToString());s.Room.PreviewVisible=false;
+                if(s.Room.AnnotationHandles.Count==0)
+                {
+                    var table=(BlockTable)tx.GetObject(s.Document.Database.BlockTableId,OpenMode.ForRead);
+                    var model=(BlockTableRecord)tx.GetObject(table[BlockTableRecord.ModelSpace],OpenMode.ForWrite);
+                    var title=new DBText{TextString=s.Room.Name,Height=200,Position=new Point3d(0,-350,0),LayerId=Blocks.Layer(s.Document.Database,tx,"GY_TEXT",7)};
+                    title.TransformBy(CadGeometry.ToWorld(s.Room.Boundary!.Frame));model.AppendEntity(title);tx.AddNewlyCreatedDBObject(title,true);
+                    s.Room.AnnotationHandles.Add(title.Handle.ToString());
+                }
+                if(chosen.AppendToPlaced)
+                {
+                    s.Room.Candidates.RemoveAt(s.Room.SelectedCandidate);
+                    s.Room.SelectedCandidate=Math.Max(0,s.Room.SelectedCandidate-1);
+                }
+                s.Room.PreviewVisible=false;
             });
             s.Document.Editor.WriteMessage("\n当前房间已用原生块参照入图。一次 UNDO 可撤销本次命令；校核状态仍以实际检查为准。");
         },hideGraphicsAfter:true);
@@ -349,7 +395,7 @@ namespace Gengyi.Cad.AutoCAD2024
             if(items.Any(p=>p.Locked))throw new ArgumentException("设备/柜组已锁定。");
             var anchor=CadGeometry.Local(s.Room.Boundary!.Frame,CadGeometry.Point(s.Document.Editor,"拖动基点："));
             s.Preview.Clear();
-            using(var jig=new MoveJig(s,items,anchor,scene))
+            using(var jig=new MoveJig(s,items,anchor,preview?s.Room.Candidates[s.Room.SelectedCandidate].Scene(s.Room):scene))
             {
                 var status=s.Document.Editor.Drag(jig);if(status.Status!=PromptStatus.OK)throw new Cancelled();
                 var copies=items.Select(Serialization.Copy).ToList();foreach(var p in copies)p.Position+=jig.Delta;
@@ -409,7 +455,7 @@ namespace Gengyi.Cad.AutoCAD2024
             bool preview=HasPreview(s);var p=preview?PickPreview(s):Pick(s);if(p.Locked)throw new ArgumentException("设备已锁定。");
             var scene=preview?s.Room.Candidates[s.Room.SelectedCandidate].Items:s.Room.Placed;
             ShoeStacking.RejectNewViolations(scene,scene.Where(i=>i.Id!=p.Id).ToList());
-            s.Edit(tx=>{if(preview){var candidate=s.Room.Candidates[s.Room.SelectedCandidate];candidate.Items.RemoveAll(i=>i.Id==p.Id);candidate.Statistics=Validation.Evaluate(s.Project,s.Room,candidate.Items);}else Erase(s,p.NativeHandle,tx);});
+            s.Edit(tx=>{if(preview){var candidate=s.Room.Candidates[s.Room.SelectedCandidate];candidate.Items.RemoveAll(i=>i.Id==p.Id);candidate.Statistics=Validation.Evaluate(s.Project,s.Room,candidate.Scene(s.Room));}else Erase(s,p.NativeHandle,tx);});
         });
         [CommandMethod("GENGYI","GYLENGTH",CommandFlags.Modal)]
         public void Length()=>Run(s=>
@@ -461,7 +507,7 @@ namespace Gengyi.Cad.AutoCAD2024
         [CommandMethod("GENGYI","GYCHECK",CommandFlags.Modal)]public void Check()=>Run(s=>
         {
             NeedBoundary(s);
-            var scene=HasPreview(s)?s.Room.Candidates[s.Room.SelectedCandidate].Items:s.Room.Placed;
+            var scene=HasPreview(s)?s.Room.Candidates[s.Room.SelectedCandidate].Scene(s.Room):s.Room.Placed;
             var stats=Validation.Evaluate(s.Project,s.Room,scene);s.Report(true,stats);
             s.WitnessPath=null;
             if(s.Room.Mode==RoomMode.Shoe && stats.Checks["walking_without_crossing"]==CheckState.Fail)
@@ -477,7 +523,7 @@ namespace Gengyi.Cad.AutoCAD2024
             NeedBoundary(s);var editor=s.Document.Editor;
             var value=editor.GetString("\n输入异常实例ID/前缀、柜组ID或原生句柄：");if(value.Status!=PromptStatus.OK)throw new Cancelled();
             string query=value.StringResult.Trim();if(query.Length==0)throw new Cancelled();
-            var scene=HasPreview(s)?s.Room.Candidates[s.Room.SelectedCandidate].Items:s.Room.Placed;
+            var scene=HasPreview(s)?s.Room.Candidates[s.Room.SelectedCandidate].Scene(s.Room):s.Room.Placed;
             var matches=scene.Where(p=>p.Id.StartsWith(query,StringComparison.OrdinalIgnoreCase) || p.GroupId==query || p.NativeHandle==query).ToList();
             if(matches.Count==0)throw new ArgumentException("当前房间没有匹配的设备/柜组。");
             using(var view=editor.GetCurrentView())
@@ -523,7 +569,8 @@ namespace Gengyi.Cad.AutoCAD2024
         }
         private static void SavePreviewEdits(Session s,List<Placement> copies)
         {
-            var scene=s.Room.Candidates[s.Room.SelectedCandidate].Items;
+            var selected=s.Room.Candidates[s.Room.SelectedCandidate];
+            var scene=selected.Scene(s.Room);
             var proposed=scene.Select(p=>copies.FirstOrDefault(q=>q.Id==p.Id)??p).ToList();
             ShoeStacking.RejectNewViolations(scene,proposed);
             LockerAisles.RejectNewViolations(s.Room,scene,proposed);
@@ -532,7 +579,7 @@ namespace Gengyi.Cad.AutoCAD2024
             {
                 var candidate=s.Room.Candidates[s.Room.SelectedCandidate];
                 candidate.Items=candidate.Items.Select(p=>copies.FirstOrDefault(q=>q.Id==p.Id)??p).ToList();
-                candidate.Statistics=Validation.Evaluate(s.Project,s.Room,candidate.Items);
+                candidate.Statistics=Validation.Evaluate(s.Project,s.Room,candidate.Scene(s.Room));
             });
         }
         internal static Placement Pick(Session s)

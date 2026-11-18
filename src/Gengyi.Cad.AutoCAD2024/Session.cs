@@ -141,7 +141,7 @@ namespace Gengyi.Cad.AutoCAD2024
                     {
                         room.SelectedCandidate=Math.Max(0,Math.Min(room.SelectedCandidate,room.Candidates.Count-1));
                         var candidate=room.Candidates[room.SelectedCandidate];
-                        candidate.Statistics=Validation.Evaluate(Project,room,candidate.Items);
+                        candidate.Statistics=Validation.Evaluate(Project,room,candidate.Scene(room));
                     }
                 }
                 transaction.Commit();

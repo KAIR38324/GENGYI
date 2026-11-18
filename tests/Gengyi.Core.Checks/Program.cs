@@ -174,6 +174,105 @@ static class Program
             "switching shifts invalidates candidates while retaining the original drawing inputs");
     }
 
+    static void TrackAndSearchChecks()
+    {
+        var project=Project.Create();
+        var shoe=Make(RoomMode.Shoe,11500,8500);
+        var vertices=new[]{new V2(2000,2000),new V2(8325,2000),new V2(8325,3650),new V2(1675,3650),
+            new V2(1675,5300),new V2(8000,5300)};
+        Assert(Layout.TrackPoint(shoe,new[]{vertices[0]},new V2(8335,2100)).Distance(vertices[1])<.0001,
+            "the first shoe-track point snaps to whole modules with room for the next R650 turn");
+        var low=Layout.Track(shoe,vertices,312,false,Array.Empty<V2>(),out string note,false);
+        var stacked=Layout.Track(shoe,vertices,312,false,Array.Empty<V2>(),out _,true);
+        var stats=Validation.Evaluate(project,shoe,stacked.Items);
+        Assert(note.Length==0 && Layout.IsShoeLayout(low.Items) && Layout.IsShoeLayout(stacked.Items) && stats.Nominal==312 &&
+            low.Items.Sum(p=>p.Equipment.Capacity)==240 && stats.Corners==4 &&
+            stats.Checks["geometry"]==CheckState.Pass && stats.Checks["connections"]==CheckState.Pass &&
+            ShoeStacking.Violations(stacked.Items).Count==0,
+            "a five-segment shoe track builds an actual S with 240 single-level places and 72 legal stacking places");
+        var centre=low.Items.Single(p=>p.Equipment.IsShoe && p.Position.Distance(new V2(4000,1675))<.001);
+        var guide=centre.Transform(new V2(1000,325));
+        var locked=Layout.Track(shoe,vertices,312,false,new[]{guide},out _,true);
+        Assert(locked.Items.Any(p=>p.Locked && p.EquipmentId=="S24" && p.CrossingEnabled) &&
+            locked.Items.Sum(p=>p.Equipment.Capacity)==288,"protecting the middle cabinet retains a single-level crossing and removes 24 stacking places");
+        Assert(!Layout.IsShoeLayout(Layout.Track(shoe,vertices.Take(4).ToArray(),80,false,Array.Empty<V2>(),out _).Items),
+            "a partly drawn track can provide a preview while the completed shoe layout still requires an open S");
+        var loop=vertices.ToList();
+        loop[loop.Count-1]=new V2(1675,-3000); // This leg does not continue the open S.
+        Assert(!Layout.IsShoeLayout(Layout.Track(shoe,loop,0,false,Array.Empty<V2>(),out _).Items),
+            "invalid parallel or incomplete legs are never accepted as a full S shape");
+
+        var first=Make(RoomMode.FirstChange,12000,5000);
+        var existing=new Placement{EquipmentId="LOCKER12",Position=new V2(4600,4500)};
+        first.Placed.Add(existing);
+        var wall=new[]{new V2(2000,0),new V2(4300,0)};
+        var firstTrack=Layout.Track(first,wall,24,false,Array.Empty<V2>(),out _);
+        var flipped=Layout.Track(first,wall,24,true,Array.Empty<V2>(),out _);
+        Assert(firstTrack.Items.Count==2 && firstTrack.AppendToPlaced && firstTrack.Scene(first).Count==3 &&
+            Validation.Evaluate(project,first,firstTrack.Scene(first)).GeometricAvailable==36 &&
+            flipped.Items.All(p=>GeoMinY(p)<0),"locker track follows cabinet backs, flips sides and validates existing plus added cabinets");
+        Assert(Serialization.Copy(firstTrack).AppendToPlaced,"saving a track draft preserves its append semantics");
+        double GeoMinY(Placement p)=>Geometry.Footprint(p).EnvelopeInternal.MinY;
+
+        first.Placed.Clear();
+        first.CustomPeople=5;
+        first.Doors.Add(new DoorOpening{Start=new V2(5550,0),End=new V2(6450,0)});
+        first.Obstacles.Add(new Region{Points=Geometry.Rect(3900,0,200,5000)});
+        first.Obstacles.Add(new Region{Points=Geometry.Rect(7900,0,200,5000)});
+        Assert(Layout.Generate(project,first).Candidates.Any(c=>c.Statistics.GeometricAvailable>=12),
+            "one-change generation reaches the middle compartment connected to the door before spending its target in isolated compartments");
+        var skew=Make(RoomMode.FirstChange);
+        skew.Boundary=BoundaryEditing.FromOutline(Geometry.Rect(0,0,6500,2150).Select(p=>p.Rotate(45)).ToList(),new Frame());
+        skew.CustomPeople=50;
+        var oriented=Layout.Generate(project,skew);
+        Assert(oriented.Candidates.Any(c=>c.Statistics.GeometricAvailable>=110 && c.Items.All(p=>Geometry.Orthogonal(p.Rotation-45))),
+            "first-change generation follows sloped straight walls even when the drawing axes are unchanged");
+
+        var stepped=Make(RoomMode.Shoe,7850,5950);
+        stepped.CustomPeople=68;stepped.Options.AllowStacking=false;
+        stepped.Obstacles.Add(new Region{Points=Geometry.Rect(0,0,3150,1650)});
+        stepped.Obstacles.Add(new Region{Points=Geometry.Rect(4650,4300,3200,1650)});
+        Assert(Layout.Generate(project,stepped).Candidates.Any(c=>c.Statistics.GeometricAvailable>=150),
+            "allowing different end-run lengths recovers the 150-place stepped shoe-room layout");
+        var aligned=Make(RoomMode.Shoe,6800,7700);
+        aligned.CustomPeople=60;aligned.Options.AllowStacking=false;
+        aligned.Doors.Add(new DoorOpening{Start=new V2(1150,0),End=new V2(2050,0),Side=DoorSide.Dirty});
+        aligned.Doors.Add(new DoorOpening{Start=new V2(4750,7700),End=new V2(5650,7700),Side=DoorSide.Clean});
+        aligned.Closures.Add(new Region{Points=Geometry.Rect(0,1750,1750,650)});
+        aligned.Closures.Add(new Region{Points=Geometry.Rect(4750,5050,2050,650)});
+        Assert(Layout.Generate(project,aligned).Candidates.First().Statistics.Checks["workflow_with_crossing"]==CheckState.Pass,
+            "existing partitions guide terminal offsets and proven access is preferred when ranking shoe plans");
+
+        var loopItems=low.Items.Where(p=>p.Equipment.IsShoe && p.Rotation%180==0 && p.Position.Y<=3325 ||
+            p.Equipment.IsCorner && p.Position.Y<=3325).ToList();
+        Assert(!Layout.IsShoeLayout(loopItems),"a broken chain cannot pass the two-open-end S rule");
+        var actualLoop=Make(RoomMode.Shoe,6800,6000);
+        Placement P(string id,double x,double y,double rotation=0)=>new Placement{EquipmentId=id,Position=new V2(x,y),Rotation=rotation,GroupId="loop"};
+        var closed=new[]{P("S18",1750,1000),P("S18",3250,1000),P("S18",1750,2650),P("S18",3250,2650),
+            P(Equipment.CornerId,4750,1650,270),P("S12",5400,1650,90),P(Equipment.CornerId,4750,2650),
+            P(Equipment.CornerId,1750,1650,180),P("S12",1750,1650,90),P(Equipment.CornerId,1750,2650,90)};
+        Assert(!Layout.IsShoeLayout(closed) && Validation.Evaluate(project,actualLoop,closed).Checks["connections"]==CheckState.Pass,
+            "four R650 corners can form a closed loop but port topology rejects it as an S");
+
+        var opening=Make(RoomMode.FirstChange,5000,3500);
+        opening.Doors.Add(new DoorOpening{Start=new V2(1000,0),End=new V2(1900,0)});
+        opening.Obstacles.Add(new Region{Points=Geometry.Rect(1000,800,900,500)});
+        Assert(Validation.Evaluate(project,opening,Array.Empty<Placement>()).Checks[RoomAccess.EntryCheck]==CheckState.Pass,
+            "a 900 mm opening can lead into a turn at 800 mm with a 600 mm walking width");
+        opening.Passages.Add(new Region{Points=Geometry.Rect(1000,650,900,2000)});
+        Assert(Validation.Evaluate(project,opening,Array.Empty<Placement>()).Issues.Any(i=>i.Code=="PASSAGE_FIXED_BLOCKER"),
+            "a fixed obstruction in the designated passage is reported");
+        var secondDoor=Make(RoomMode.Shoe,10000,6000);
+        secondDoor.Doors.Add(new DoorOpening{Start=new V2(1000,0),End=new V2(1900,0),Side=DoorSide.Dirty});
+        secondDoor.Doors.Add(new DoorOpening{Start=new V2(8700,0),End=new V2(9600,0),Side=DoorSide.Dirty});
+        secondDoor.Doors.Add(new DoorOpening{Start=new V2(4600,6000),End=new V2(5500,6000),Side=DoorSide.Clean});
+        foreach(var rect in new[]{Geometry.Rect(0,2700,4000,650),Geometry.Rect(6000,2700,4000,650),Geometry.Rect(8000,0,100,2200)})
+            secondDoor.Closures.Add(new Region{Points=rect});
+        var crossing=new Placement{EquipmentId="S24",Position=new V2(4000,2700),CrossingEnabled=true};
+        Assert(Validation.Evaluate(project,secondDoor,new[]{crossing}).Checks["workflow_with_crossing"]==CheckState.Fail,
+            "every selected door must reach a crossing through its own body-width walking component");
+    }
+
     static void ShoeShapeWithDoorsChecks()
     {
         var project=Project.Create();
@@ -459,6 +558,7 @@ static class Program
         UpdatedDimensionsChecks();
         LockerAisleChecks();
         RoomAccessChecks();
+        TrackAndSearchChecks();
         ShoeShapeWithDoorsChecks();
         IrregularBoundaryAndWorkflowChecks();
         ShoeStackingChecks();

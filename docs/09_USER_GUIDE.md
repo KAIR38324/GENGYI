@@ -1,10 +1,10 @@
-# GENGYI v0.5.2 使用与宿主验收
+# GENGYI v0.6.0 使用与宿主验收
 
 本包面向 Windows AutoCAD 2024（R24.3 / .NET Framework 4.8 / x64）。当前是已经实现并通过核心测试、API 编译的插件版本，尚未在实际 CAD 中完成加载和操作验收。安装包保留 `Contents/Windows` 内全部 DLL；不要将 Autodesk DLL 拷贝进来。
 
 ## 先按这条流程使用
 
-执行 `GYSETUP` 打开工作台，标题显示 v0.5.2；`GYENV` 可查看实际 DLL 路径。按「布置」页顺序：
+执行 `GYSETUP` 打开工作台，标题显示 v0.6.0；`GYENV` 可查看实际 DLL 路径。按「布置」页顺序：
 
 1. 在「班次与人数」选择单班或双班，填写每班人数和男性比例。换鞋间和一更按所选班次合计，二更按一班周转。分房先分配整数人数，再分别乘 1.1 向上取整。
 2. 换鞋间直接选择「不叠放」或「允许叠放」。允许时仍要求每个48人柜的两端相接24人单柜；可以连续24，也可以全24。一更、二更按各自设备规则计算。
@@ -14,6 +14,15 @@
 6. 若缺图块，在同一步绑定原 CAD 设备块，或明确选择图片重建（待比对）；检查后确认入图。编辑与块库在独立页签，高级尺寸和核对参数另列。
 
 面积建议是所列设备预排的矩形包络，设备投影单独显示。它还需结合门柱、辅助设备、衣物、真实封闭和操作条件校核，不是已证明的最小合格面积。换鞋单柜标「每侧3层」，S48标「上下2柜 / 每侧6层 / 高1200mm」，一更柜标「3列×4层」。旧版本已入图的受管理设备在执行 `GYSETUP` 时补上标识。原生 `ATTSYNC` 如清除了这些自有属性，再执行 `GYSETUP` 恢复。
+
+## 沿轨迹布置（GYTRACK）
+
+选择换鞋间或一更的真实边界，设置门位和通行保留区，在方案区点击「沿轨迹布置」。现有柜体参与碰撞、通行及人数校核。
+
+- **换鞋间**逐点画柜链中心线。轨迹按整柜模块吸附，拐点预留 R650 圆弧空间。画成至少三排、左右交替转弯的完整 S 形后才能生成候选。输入 `Stack` 切换单层或允许局部叠放，输入 `Low` 并点选已画好的柜体可锁为单层。S48 只出现在两端实际相接 S24 的位置。
+- **一更**沿柜背逐点画，默认柜体位于行进左侧。输入 `Flip` 翻侧。与既有对排衣柜一起校核 1100 mm 净距。
+- 侧栏显示目标、已入图、几何可用量、当前轨迹预计新增及缺口。鞋柜同时显示轨迹名义单层容量和叠放增量。红色柜体需调整，黄色表示锁定柜，紫色表示叠柜。
+- 输入 `Undo` 撤回上一点，按回车做完整校核并保存为候选。检查通过后使用「确认当前方案入图」追加设备。按 Esc 取消本次轨迹。
 
 ## 持久安装与每次启动加载
 
@@ -95,9 +104,11 @@ S48 允许存储，但 1200 mm 顶面不作为 600 mm 跨坐面。单层跨柜�
 8. 在有门和通行保留区的图纸上，使用缺少图块的候选执行 GYCOMMIT，使入图失败。确认临时柜、门位和保留区标记消失，原有图元及选定的通行多段线仍在。显式重新预览后执行 GYCANCEL，保存并重开图纸，检查方案仍可选、临时图形关闭。
 9. 一更选两个 900 mm 门，人员净宽 600 mm。生成沿墙柜排，核对两个门均畅通、相对柜面间距至少 1100 mm。尝试拖柜挡住第二个门，检查预警。取消追加门，再切房、保存重开和撤销重做，核对门和通行区仍属于原房间。
 
+10. 使用轨迹分别画成三排 S 形和靠墙衣柜。测试 Stack、Low、Flip、Undo、Esc、回车后的缺口与追加入图，再用一次 UNDO 撤销本次追加。
+
 核心测试、编译和包结构检查已可自动执行；以上宿主步骤没有在当前 Linux 环境运行，不预先勾选通过。
 
-常用命令：`GYSETUP`、`GYENV`、`GYPLAN`、`GYESTIMATE`、`GYRECT`、`GYDOORS`、`GYPASSAGES`、`GYOBSTACLES`、`GYCLOSURES`、`GYGENERATE`、`GYPREVIEW`、`GYCOMMIT`、`GYCANCEL`、`GYDRAG`、`GYROTATE`、`GYTYPE`、`GYLENGTH`、`GYCROSS`、`GYBLOCK`、`GYIMPORT`、`GYREBUILD`、`GYVERIFY`、`GYADD`、`GYLOCK`、`GYDELETE`、`GYTRANSFER`、`GYCHECK`、`GYSTATS`、`GYEXPORT`。导出是本地 JSON，并保留毫米坐标、来源和独立校核状态。
+常用命令：`GYSETUP`、`GYENV`、`GYPLAN`、`GYESTIMATE`、`GYRECT`、`GYDOORS`、`GYPASSAGES`、`GYOBSTACLES`、`GYCLOSURES`、`GYGENERATE`、`GYTRACK`、`GYPREVIEW`、`GYCOMMIT`、`GYCANCEL`、`GYDRAG`、`GYROTATE`、`GYTYPE`、`GYLENGTH`、`GYCROSS`、`GYBLOCK`、`GYIMPORT`、`GYREBUILD`、`GYVERIFY`、`GYADD`、`GYLOCK`、`GYDELETE`、`GYTRANSFER`、`GYCHECK`、`GYSTATS`、`GYEXPORT`。导出是本地 JSON，并保留毫米坐标、来源和独立校核状态。
 
 ## 48人柜必须交错布置
 
