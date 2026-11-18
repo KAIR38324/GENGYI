@@ -27,10 +27,10 @@ namespace Gengyi.Cad.AutoCAD2024
                 if(session!=null)
                 {
                     Host.Panel?.Update(session);
-                    if(session.Room.PreviewVisible && session.Room.Candidates.Count>0)
+                    if(!session.Preview.PlanningVisible && session.Room.PreviewVisible && session.Room.Candidates.Count>0)
                         try{session.Preview.Show(session,session.Room.Candidates[Math.Min(session.Room.SelectedCandidate,session.Room.Candidates.Count-1)].Items);}
                         catch(System.Exception ex){session.Document.Editor.WriteMessage("\n预览未显示："+ex.Message);}
-                    if(session.WitnessPath!=null && session.WitnessPath.Count>1 && session.WitnessRoom==session.Room.Id)
+                    if(!session.Preview.PlanningVisible && session.WitnessPath!=null && session.WitnessPath.Count>1 && session.WitnessRoom==session.Room.Id)
                     {
                         var line=CadGeometry.Polyline(session.WitnessPath,session.Room.Boundary!.Frame,1);line.Closed=false;session.Preview.Overlay(line);
                     }
@@ -59,23 +59,47 @@ namespace Gengyi.Cad.AutoCAD2024
             s.Edit(_=>{var r=new Room{Id="custom_"+Guid.NewGuid().ToString("N"),Name=name.StringResult,Gender="custom",CustomPeople=people,
                 Mode=mode=="Shoe"?RoomMode.Shoe:mode=="First"?RoomMode.FirstChange:RoomMode.SecondChange};s.Project.Rooms.Add(r);s.Project.CurrentRoomId=r.Id;});
         });
+        private static RectangleEstimate PlanningChoice(Session s,out int selectedIndex)
+        {
+            var estimate=AreaPlanning.Estimate(s.Project.Population,s.Room);
+            if(estimate.Options.Count==0)throw new ArgumentException(estimate.Message);
+            var editor=s.Document.Editor;
+            editor.WriteMessage("\n"+estimate.Basis+"\n"+estimate.Message);
+            for(int i=0;i<estimate.Options.Count;i++)editor.WriteMessage("\n"+(i+1)+". "+estimate.Options[i]);
+            var pick=editor.GetInteger(new PromptIntegerOptions("\n选择预排尺寸编号：")
+                {DefaultValue=1,UseDefaultValue=true,AllowNegative=false,AllowZero=false,LowerLimit=1,UpperLimit=estimate.Options.Count});
+            if(pick.Status!=PromptStatus.OK)throw new Cancelled();
+            selectedIndex=pick.Value-1;return estimate.Options[selectedIndex];
+        }
+        [CommandMethod("GENGYI","GYPLAN",CommandFlags.Modal)]
+        public void Plan()=>Run(s=>
+        {
+            NeedModelSpace(s);var estimate=PlanningChoice(s,out int selectedIndex);var editor=s.Document.Editor;
+            double units=CadGeometry.Units(s.Document.Database,editor);
+            Boundary reference;bool rotated;
+            // Keep the previous preview intact until the user accepts this one.
+            using(var jig=new SuggestedRectangleJig(estimate,editor.CurrentUserCoordinateSystem,units,s.Document.Database,s.Room.Options))
+            {
+                PromptResult result;
+                do{result=editor.Drag(jig);}while(result.Status==PromptStatus.Keyword);
+                if(result.Status!=PromptStatus.OK)throw new Cancelled();
+                reference=jig.Boundary();rotated=jig.Rotated;
+            }
+            string signature=AreaPlanning.Signature(s.Project.Population,s.Room);
+            s.Preview.ShowPlanning(s,estimate,reference,rotated,signature);
+            s.Edit(_=>{s.Room.PlanningPreviewSignature=signature;s.Room.PlanningPreviewOption=selectedIndex;s.Room.PreviewVisible=false;});
+            editor.WriteMessage("\n已显示人数与叠放策略的临时预排。参考框不是实际房间边界；接下来选择你自己的闭合房间边界，再生成候选。没有设备或参考框写入图纸。");
+        });
         [CommandMethod("GENGYI","GYRECT",CommandFlags.Modal)]
         public void Rectangle()=>Run(s=>
         {
             NeedModelSpace(s);
             var editor=s.Document.Editor;
-            string method=CadGeometry.Keyword(editor,"选择自己的矩形 / 手动两角 / 建议尺寸","Select Corners Suggested","Select");
+            string method=CadGeometry.Keyword(editor,"选择自己的房间边界 / 手动矩形两角 / 建议尺寸","Select Corners Suggested","Select");
             RectangleEstimate? suggestion=null;
             if(method=="Suggested")
             {
-                var estimate=AreaPlanning.Estimate(s.Project.Population,s.Room);
-                if(estimate.Options.Count==0)throw new ArgumentException(estimate.Message);
-                editor.WriteMessage("\n"+estimate.Basis+"\n"+estimate.Message);
-                for(int i=0;i<estimate.Options.Count;i++)editor.WriteMessage("\n"+(i+1)+". "+estimate.Options[i]);
-                var pick=editor.GetInteger(new PromptIntegerOptions("\n选择建议尺寸编号：")
-                    {DefaultValue=1,UseDefaultValue=true,AllowNegative=false,AllowZero=false,LowerLimit=1,UpperLimit=estimate.Options.Count});
-                if(pick.Status!=PromptStatus.OK)throw new Cancelled();
-                suggestion=estimate.Options[pick.Value-1];
+                suggestion=PlanningChoice(s,out _);
             }
             double units=CadGeometry.Units(s.Document.Database,editor);
             Boundary boundary;
@@ -93,12 +117,12 @@ namespace Gengyi.Cad.AutoCAD2024
             }
             else if(method=="Select")
             {
-                var opt=new PromptEntityOptions("\n选择闭合四边直线矩形：");opt.SetRejectMessage("\n需要矩形多段线。");opt.AddAllowedClass(typeof(Polyline),true);
+                var opt=new PromptEntityOptions("\n选择你自己的闭合房间多段线（支持凹形、斜边和弧边）：");opt.SetRejectMessage("\n需要闭合房间多段线。");opt.AddAllowedClass(typeof(Polyline),true);
                 var pick=editor.GetEntity(opt);if(pick.Status!=PromptStatus.OK)throw new Cancelled();
                 using(var tx=s.Document.Database.TransactionManager.StartOpenCloseTransaction())
                 {
                     var pl=(Polyline)tx.GetObject(pick.ObjectId,OpenMode.ForRead);
-                    boundary=CadGeometry.ReadRectangle(pl,units,s.Room.Boundary?.Frame);
+                    boundary=CadGeometry.ReadBoundary(pl,units,s.Room.Boundary?.Frame??CadGeometry.UcsFrame(editor.CurrentUserCoordinateSystem,units));
                 }
             }
             else
@@ -110,10 +134,11 @@ namespace Gengyi.Cad.AutoCAD2024
                 boundary=new Boundary{Width=Math.Abs(ua.X-ub.X)*units,Height=Math.Abs(ua.Y-ub.Y)*units,
                     Frame=new Frame{Origin=CadGeometry.A(origin),XAxis=CadGeometry.A(ucs.CoordinateSystem3d.Xaxis.GetNormal()),YAxis=CadGeometry.A(ucs.CoordinateSystem3d.Yaxis.GetNormal()),MillimetersPerDrawingUnit=units}};
             }
-            if(boundary.Width<1 || boundary.Height<1)throw new ArgumentException("矩形长宽必须至少 1 mm。");
+            if(boundary.Width<1 || boundary.Height<1)throw new ArgumentException("房间边界的两个方向跨度必须至少 1 mm。");
             s.Edit(_=>BoundaryEditing.Replace(s.Room,boundary));s.Preview.Clear();
             if(s.Room.Placed.Count>0)editor.WriteMessage("\n边界已更换，已有设备的位置保持不变；原预览已清除，请重新生成或检查方案。");
-            editor.WriteMessage($"\n{boundary.Width:0.###} × {boundary.Height:0.###} mm；面积 {boundary.Width*boundary.Height/1000000:0.###} ㎡。");
+            editor.WriteMessage($"\n房间实际面积 {boundary.AreaM2:0.###} ㎡；外接范围 {boundary.Width:0.###} × {boundary.Height:0.###} mm。布置只使用完整房间轮廓，凹口和斜边之外均不可占用。");
+            if(boundary.CurveToleranceMm>0)editor.WriteMessage("\n弧边按≤0.05mm弦误差离散，并内缩≥0.05mm作保守布置校核；显示面积来自原多段线。");
         });
         [CommandMethod("GENGYI","GYOBSTACLES",CommandFlags.Modal)]
         public void Obstacles()=>Regions(false);
@@ -130,8 +155,10 @@ namespace Gengyi.Cad.AutoCAD2024
                 foreach(ObjectId id in selection.Value.GetObjectIds())
                 {
                     var pl=(Polyline)tx.GetObject(id,OpenMode.ForRead);
-                    var points=CadGeometry.PolylinePoints(pl).Select(p=>CadGeometry.Local(s.Room.Boundary!.Frame,p)).ToList();
-                    Geometry.Polygon(points);regions.Add(new Region{NativeHandle=pl.Handle.ToString(),Points=points});
+                    var frame=s.Room.Boundary!.Frame;
+                    var points=CadGeometry.PolylinePoints(pl,.05/frame.MillimetersPerDrawingUnit).Select(p=>CadGeometry.Local(frame,p)).ToList();
+                    Geometry.Polygon(points);regions.Add(new Region{NativeHandle=pl.Handle.ToString(),Points=points,
+                        CurveToleranceMm=Enumerable.Range(0,pl.NumberOfVertices).Any(i=>Math.Abs(pl.GetBulgeAt(i))>1e-10)?.05:0});
                 }
             s.Edit(_=>{if(closure)s.Room.Closures=regions;else s.Room.Obstacles=regions;s.Room.Stale=true;});
         });
@@ -330,7 +357,7 @@ namespace Gengyi.Cad.AutoCAD2024
                 var item=Serialization.Read<Placement>(Store.Instance(br,tx)??throw new ArgumentException("此块不受插件管理。"));
                 if(item.Locked)throw new ArgumentException("设备已锁定。");
                 if(!s.Project.Mappings.TryGetValue(item.MappingKey,out var map))throw new ArgumentException("缺少块标定。");
-                bool valid=s.Room.Mode==RoomMode.Shoe?item.Equipment.IsShoe||item.EquipmentId=="CORNER_R600":s.Room.Mode==RoomMode.FirstChange?item.EquipmentId=="LOCKER12":item.EquipmentId=="HANGER_CUSTOM";
+                bool valid=s.Room.Mode==RoomMode.Shoe?item.Equipment.IsShoe||item.EquipmentId==Equipment.CornerId:s.Room.Mode==RoomMode.FirstChange?item.EquipmentId=="LOCKER12":item.EquipmentId=="HANGER_CUSTOM";
                 if(!valid)throw new ArgumentException("该设备与当前房间模式不匹配。");
                 var source=s.Project.Rooms.FirstOrDefault(r=>r.Id==item.RoomId);
                 if(source?.Id==s.Room.Id)throw new ArgumentException("设备已属于当前房间。");
@@ -394,7 +421,7 @@ namespace Gengyi.Cad.AutoCAD2024
                 if(s.Document.Database.CurrentSpaceId!=table[BlockTableRecord.ModelSpace])throw new ArgumentException("请切换到模型空间或进入模型视口后选择/编辑设备，避免把纸空间坐标写入模型。");
             }
         }
-        internal static void NeedBoundary(Session s){NeedModelSpace(s);if(s.Room.Boundary==null)throw new ArgumentException("请先为当前房间选择矩形。");}
+        internal static void NeedBoundary(Session s){NeedModelSpace(s);if(s.Room.Boundary==null)throw new ArgumentException("请先为当前房间选择闭合边界。");}
         internal static bool HasPreview(Session s)=>s.Room.PreviewVisible && s.Room.Candidates.Count>0;
         private static Placement PickPreview(Session s)
         {

@@ -10,6 +10,126 @@ static class Program
     static void Assert(bool value, string message) { if (!value) throw new Exception(message); passed++; Console.WriteLine("PASS " + message); }
     static Room Make(RoomMode mode, double w=15000, double h=12000) => new Room
     { Id="test", Mode=mode, Boundary=new Boundary { Width=w,Height=h } };
+    static void UpdatedDimensionsChecks()
+    {
+        var single=Equipment.Get("S24");var stacked=Equipment.Get("S48");var locker=Equipment.Get("LOCKER12");
+        Assert(single.Length==2000 && single.Depth==650 && single.Height==600 && stacked.Depth==650 && stacked.Height==1200 && Equipment.ShoeDuctMm==50,"650-wide shoe cabinets retain 600/1200 heights and a 50 millimetre central ventilation duct");
+        Assert(locker.Length==1140 && locker.Depth==500 && locker.Height==2095 && locker.Capacity==12 && locker.Levels==4,"first-change lockers are exactly 1140 by 500 by 2095 millimetres for twelve people");
+        var corner=new Placement{EquipmentId=Equipment.CornerId};var shape=Geometry.Footprint(corner);
+        Assert(corner.Equipment.Length==650 && shape.EnvelopeInternal.Width==650 && shape.EnvelopeInternal.Height==650 && Math.Abs(shape.Area-Math.PI*650*650/4)<40,"new corners use a real R650 quarter arc with a matching 650 millimetre port");
+        var oldMapping=new BlockMapping{Key="old-600",EquipmentId="S24",EquipmentDepthMm=600,BlockName="Old600",Provenance="original_cad",FootprintVerified=true,ReviewStatus="approved",PhysicalOutline=Geometry.Rect(0,0,2000,600)};
+        var current=new Placement{EquipmentId="S24",MappingKey="old-600",PhysicalOutline=Serialization.Copy(oldMapping.PhysicalOutline),Position=new V2(2000,2000)};
+        var project=Project.Create();project.Mappings["old-600"]=oldMapping;
+        var stats=Validation.Evaluate(project,Make(RoomMode.Shoe),new[]{current});
+        Assert(!oldMapping.Accepts(current) && stats.GeometricAvailable==0 && stats.Effective==null && stats.Checks["geometry"]==CheckState.Fail,"old verified 600-wide source geometry cannot silently certify the new 650-wide cabinet");
+        oldMapping.EquipmentDepthMm=650;oldMapping.PhysicalOutline=Geometry.Rect(0,0,2000,650);
+        Assert(oldMapping.Accepts(current),"new source bindings explicitly record the updated shoe depth");
+        var oldCorner=new Placement{EquipmentId=Equipment.LegacyCornerId,Position=new V2(2000,2000)};
+        Assert(oldCorner.Equipment.Depth==600 && Validation.Evaluate(project,Make(RoomMode.Shoe),new[]{oldCorner}).Checks["geometry"]==CheckState.Fail,"legacy R600 remains readable at its old size but cannot be mistaken for the updated R650");
+        Assert(EquipmentPresentation.Describe(new Placement{EquipmentId="S48"},new LayoutOptions()).CompactLines.Count<=2 &&
+            EquipmentPresentation.Describe(new Placement{EquipmentId="S48"},new LayoutOptions()).CompactLines.All(s=>!s.Contains("格") && !s.Contains("mm")) &&
+            EquipmentPresentation.Describe(corner,new LayoutOptions()).CompactLines.SequenceEqual(new[]{"R650"}),"on-drawing labels stay compact while retaining cabinet type, people and essential levels");
+    }
+    static List<V2> LOutline()=>new List<V2>{new V2(0,0),new V2(18000,0),new V2(18000,8000),new V2(8000,8000),new V2(8000,18000),new V2(0,18000)};
+    static void IrregularBoundaryAndWorkflowChecks()
+    {
+        var outline=LOutline();var boundary=BoundaryEditing.FromOutline(outline,new Frame(),"USER-L");
+        Assert(boundary.Width==18000 && boundary.Height==18000 && Math.Abs(boundary.AreaM2-224)<1e-8,"concave room reports actual 224 square metres instead of its 324 square metre bounding box");
+        var room=Make(RoomMode.Shoe);room.Boundary=boundary;
+        var notch=new Placement{EquipmentId="S24",Position=new V2(12000,12000)};
+        var stats=Validation.Evaluate(Project.Create(),room,new[]{notch});
+        Assert(stats.Nominal==24 && stats.GeometricAvailable==0 && stats.Checks["geometry"]==CheckState.Fail,"equipment inside the envelope but in the missing corner cannot count as available capacity");
+        var near=new Placement{EquipmentId="S24",Position=new V2(5500,12000)};
+        Assert(Validation.Evaluate(Project.Create(),room,new[]{near}).Checks["boundary"]==CheckState.Fail,"shoe boundary distance is measured to the concave inner wall");
+        near.Position.X=5000;
+        Assert(Validation.Evaluate(Project.Create(),room,new[]{near}).Checks["boundary"]==CheckState.Pass,"a true 1000 millimetre clearance to an inner concave wall is accepted");
+        var first=Make(RoomMode.FirstChange);first.Boundary=Serialization.Copy(boundary);
+        var locker=new Placement{EquipmentId="LOCKER12",Position=new V2(9000,7500),Rotation=180};
+        stats=Validation.Evaluate(Project.Create(),first,new[]{locker});
+        Assert(stats.Checks["geometry"]==CheckState.Pass && stats.GeometricAvailable==0,"a concave missing corner blocks an operation zone even when the whole locker body fits");
+        var changed=BoundaryEditing.FromOutline(new List<V2>{new V2(0,0),new V2(18000,0),new V2(18000,8000),new V2(7000,8000),new V2(7000,18000),new V2(0,18000)},new Frame());
+        Assert(boundary.Width==changed.Width && boundary.Height==changed.Height && boundary.AreaM2!=changed.AreaM2 &&
+            Geometry.RoomPolygon(boundary).Covers(Geometry.Factory.CreatePoint(new NetTopologySuite.Geometries.Coordinate(7500,12000))) &&
+            !Geometry.RoomPolygon(changed).Covers(Geometry.Factory.CreatePoint(new NetTopologySuite.Geometries.Coordinate(7500,12000))),"changing a notch changes the real room even when both envelope dimensions stay the same");
+        var frame=new Frame{Origin=new[]{100.0,200,300},XAxis=new[]{0.0,1,0},YAxis=new[]{0.0,0,1},MillimetersPerDrawingUnit=1000};
+        var negative=outline.Select(p=>p-new V2(5000,3000)).ToList();var normalized=BoundaryEditing.FromOutline(negative,frame);
+        Assert(Geometry.RoomOutline(normalized).Select(normalized.Frame.ToWorld).Zip(negative.Select(frame.ToWorld),(a,b)=>Distance(a,b)<1e-8).All(v=>v) &&
+            Geometry.RoomOutline(normalized).Min(p=>p.X)==0 && Geometry.RoomOutline(normalized).Min(p=>p.Y)==0,"negative polygon coordinates normalize without moving their world outline in a tilted meter drawing");
+        var reverse=Serialization.Copy(normalized);reverse.Frame.YAxis=reverse.Frame.YAxis.Select(v=>-v).ToArray();
+        var before=Geometry.RoomOutline(reverse).Select(reverse.Frame.ToWorld).ToArray();var aligned=BoundaryEditing.AlignOrientation(reverse,normalized.Frame);
+        Assert(Geometry.RoomOutline(aligned).Select(aligned.Frame.ToWorld).Zip(before,(a,b)=>Distance(a,b)<1e-8).All(v=>v),"normal reversal transforms irregular vertices along with the frame, preserving the physical room");
+        bool rejected=false;try{BoundaryEditing.FromOutline(new[]{new V2(0,0),new V2(1000,1000),new V2(1000,0),new V2(0,1000)},new Frame());}catch(ArgumentException){rejected=true;}
+        Assert(rejected,"self-intersecting room outlines are rejected instead of replaced by their envelope");
+        var legacy=Serialization.Read<Boundary>("{\"Width\":12000,\"Height\":8000}");
+        Assert(legacy.Outline==null && Math.Abs(legacy.AreaM2-96)<1e-8,"existing rectangular drawings remain readable without polygon fields");
+        var oldProject=Project.Create();oldProject.SchemaVersion="1.0";oldProject.Population.Registered=501;oldProject.Rooms[0].Boundary=legacy;oldProject.UpgradeSchema();
+        Assert(oldProject.SchemaVersion==Project.CurrentSchemaVersion && oldProject.Population.Registered==501 && oldProject.Rooms[0].Boundary!.Outline==null,"legacy project upgrade preserves rectangle and population while protecting the new polygon format from older readers");
+        oldProject.SchemaVersion="future";string oldSnapshot=Serialization.Write(oldProject);rejected=false;
+        try{oldProject.UpgradeSchema();}catch(ArgumentException){rejected=true;}
+        Assert(rejected && oldSnapshot==Serialization.Write(oldProject),"unknown project formats are rejected without changing saved fields");
+        var curved=BoundaryEditing.FromOutline(Geometry.Rect(0,0,9999.9,9999.9),new Frame());curved.SourceAreaMm2=100000000;curved.CurveToleranceMm=.05;
+        first.Boundary=curved;
+        Assert(Math.Abs(curved.AreaM2-100)<1e-8 && Geometry.RoomPolygon(curved).Area<100000000 && Math.Abs(Validation.Evaluate(Project.Create(),first,Array.Empty<Placement>()).BoundaryM2-100)<1e-8,"native curve measurement is reported separately from the conservative planning outline");
+        var project=Project.Create();var r=project.Rooms[0];
+        string signature=AreaPlanning.Signature(project.Population,r);r.PlanningPreviewSignature=signature;r.PlanningPreviewOption=0;
+        BoundaryEditing.Replace(r,boundary);
+        Assert(AreaPlanning.IsPreviewCurrent(project.Population,r,0) && !AreaPlanning.IsPreviewCurrent(project.Population,r,1),"pre-boundary preview remains current after choosing the actual outline, but not after changing reference option");
+        project.Population.MaleRatio=.50m;project.Population.Reserve=.00m;r.Options.ShoeCapacities.Reverse();
+        Assert(AreaPlanning.IsPreviewCurrent(project.Population,r,0),"equivalent decimal input scales and cabinet option order do not invalidate a completed preview");
+        r.Options.AllowStacking=!r.Options.AllowStacking;
+        Assert(!AreaPlanning.IsPreviewCurrent(project.Population,r,0),"changing the stacking decision requires a new pre-boundary preview");
+        r.Options.AllowStacking=!r.Options.AllowStacking;project.Population.Registered++;
+        Assert(!AreaPlanning.IsPreviewCurrent(project.Population,r,0),"changing the people target invalidates the old planning preview");
+        project.Population.Registered--;r.Candidates.Add(new Candidate());
+        Assert(AreaPlanning.IsPreviewCurrent(project.Population,r,0),"preview completion does not depend on random candidate or equipment IDs");
+        var restored=Serialization.Read<Project>(Serialization.Write(project));
+        Assert(restored.Rooms[0].Boundary!.Outline!.Count==6 && restored.Rooms[0].PlanningPreviewOption==0 && AreaPlanning.IsPreviewCurrent(restored.Population,restored.Rooms[0],0),"actual polygon and workflow state survive save and reopen together");
+        string exported=LayoutExport.Write(project,r);var document=JObject.Parse(exported);
+        Assert((int)document["project_state"]!["Rooms"]![0]!["Boundary"]!["Outline"]!.Count()==6 && Math.Abs((double)document["statistics"]!["BoundaryM2"]!-224)<1e-8,"export retains the real concave outline and actual measured room area");
+        var triangle=BoundaryEditing.FromOutline(new[]{new V2(0,0),new V2(18000,0),new V2(12000,16000),new V2(0,16000)},new Frame());
+        room.Boundary=triangle;near.Position=new V2(10500,12000);
+        Assert(Validation.Evaluate(Project.Create(),room,new[]{near}).Checks["boundary"]==CheckState.Fail,"clearance to a sloping wall uses the true diagonal distance");
+        room.Boundary=boundary;room.DirtySeed=new V2(15000,4000);room.CleanSeed=new V2(4000,15000);
+        var path=BypassPath.Find(room,Array.Empty<Placement>());var walking=Geometry.RoomPolygon(boundary).Buffer(-room.Options.WalkWidthMm/2,32);
+        Assert(path.Count>2 && path.Zip(path.Skip(1),(a,b)=>walking.Covers(Geometry.Factory.CreateLineString(new[]{new NetTopologySuite.Geometries.Coordinate(a.X,a.Y),new NetTopologySuite.Geometries.Coordinate(b.X,b.Y)}))).All(v=>v),"walking witnesses bend around a missing corner instead of taking a bounding-box shortcut");
+        foreach(var mode in new[]{RoomMode.Shoe,RoomMode.FirstChange,RoomMode.SecondChange})
+        {
+            project=Project.Create();r=project.Rooms.First(rm=>rm.Mode==mode);r.Boundary=Serialization.Copy(boundary);
+            string snapshot=Serialization.Write(project);var generated=Layout.Generate(project,r);
+            Assert(generated.Candidates.Count>1 && generated.Candidates.Any(c=>c.Statistics.GeometricAvailable>=project.Population.For(r)),mode+" has multiple concave-room arrangements with enough geometrically usable capacity");
+            Assert(generated.Candidates.All(c=>c.Statistics.Checks["geometry"]==CheckState.Pass && c.Statistics.Checks["boundary"]==CheckState.Pass && c.Items.All(i=>Geometry.RoomPolygon(r.Boundary).Covers(Geometry.Footprint(i)) && i.ScaleX==1 && i.ScaleY==1)),mode+" complete equipment footprints remain in the real room without shrinking or clipping");
+            Assert(snapshot==Serialization.Write(project),mode+" polygon search does not mutate saved room or preview state");
+        }
+        project=Project.Create();r=project.Rooms[0];r.Boundary=Serialization.Copy(boundary);r.Options.AllowStacking=false;
+        var lowOnly=Layout.Generate(project,r);
+        Assert(lowOnly.Candidates.Count>0 && lowOnly.Candidates.All(c=>c.Items.All(i=>i.EquipmentId!="S48")),"the visible no-stacking choice is respected by irregular-room generation");
+        r.Boundary=triangle;
+        var sloped=Layout.Generate(project,r);
+        Assert(sloped.Candidates.Count>0 && sloped.Candidates.All(c=>c.Items.All(i=>Geometry.RoomPolygon(triangle).Covers(Geometry.Footprint(i)) && Geometry.Footprint(i).Distance(Geometry.RoomPolygon(triangle).Boundary)+1e-6>=1000)),"sloped-room candidates preserve full footprints and true 1000 millimetre wall clearance");
+        foreach(var mode in new[]{RoomMode.Shoe,RoomMode.FirstChange,RoomMode.SecondChange})
+        {
+            project=Project.Create();r=project.Rooms.First(rm=>rm.Mode==mode);r.Boundary=Serialization.Copy(boundary);
+            r.Obstacles.Add(new Region{Points=Geometry.Rect(4000,3000,2000,3000)});
+            var obstacle=Geometry.Polygon(r.Obstacles[0].Points);var result=Layout.Generate(project,r);
+            Assert(result.Candidates.Count>0 && result.Candidates.All(c=>c.Items.All(i=>Geometry.RoomPolygon(boundary).Covers(Geometry.Footprint(i)) && Geometry.Footprint(i).Intersection(obstacle).Area<=Geometry.AreaTolerance)),mode+" polygon planning avoids actual interior obstacles as well as the outer missing corner");
+        }
+        project=Project.Create();r=project.Rooms[0];r.Boundary=BoundaryEditing.FromOutline(new[]{new V2(0,0),new V2(7000,0),new V2(7000,3000),new V2(3000,3000),new V2(3000,7000),new V2(0,7000)},new Frame());
+        var small=Layout.Generate(project,r);
+        Assert(small.Candidates.Count>0 && small.Candidates.All(c=>c.Statistics.GeometricAvailable<600 && c.Statistics.ConditionalDeficit>0 && c.Items.All(i=>i.ScaleX==1 && i.ScaleY==1)),"undersized irregular rooms report real deficits without shrinking equipment or pretending the envelope fits");
+        var cancelled=new System.Threading.CancellationTokenSource();cancelled.Cancel();string state=Serialization.Write(project);bool stopped=false;
+        try{Layout.Generate(project,r,cancelled.Token);}catch(OperationCanceledException){stopped=true;}
+        Assert(stopped && state==Serialization.Write(project),"cancelled irregular-room generation leaves every saved field untouched");
+        var curveRoom=Make(RoomMode.Shoe,6000,6000);curveRoom.Boundary!.CurveToleranceMm=.05;
+        curveRoom.DirtySeed=new V2(1000,1000);curveRoom.CleanSeed=new V2(5000,5000);
+        curveRoom.Closures.Add(new Region{Points=Geometry.Rect(0,2700,2000,Equipment.ShoeDepthMm)});curveRoom.Closures.Add(new Region{Points=Geometry.Rect(4000,2700,2000,Equipment.ShoeDepthMm)});
+        var cross=new Placement{EquipmentId="S24",Position=new V2(2000,2700),CrossingEnabled=true};
+        stats=Validation.Evaluate(Project.Create(),curveRoom,new[]{cross});
+        Assert(stats.Checks["hygiene_without_crossing"]==CheckState.ApproximateOnly && stats.Effective==null,"conservatively approximated curve boundaries cannot falsely certify complete dirty-clean isolation");
+        curveRoom.Boundary.CurveToleranceMm=0;curveRoom.Closures[0].CurveToleranceMm=.05;
+        Assert(Validation.Evaluate(Project.Create(),curveRoom,new[]{cross}).Checks["hygiene_without_crossing"]==CheckState.ApproximateOnly,"curve approximation on fixed closures is also kept pending for topological certification");
+        first=Make(RoomMode.FirstChange);first.Obstacles.Add(new Region{Points=Geometry.Rect(0,0,1000,1000),CurveToleranceMm=.05});
+        Assert(Validation.Evaluate(Project.Create(),first,new[]{new Placement{EquipmentId="LOCKER12",Position=new V2(1000.02,100)}}).Checks["geometry"]==CheckState.Fail,"curved obstacle collision proxies cover the known chord error instead of understating occupied space");
+    }
     static List<Placement> ShoeLine(params string[] models)=>models.Select((id,i)=>new Placement
         {Id="cabinet-"+i,EquipmentId=id,Position=new V2(2000+i*2000,2000),CrossingEnabled=id=="S24"}).ToList();
     static void ShoeStackingChecks()
@@ -19,7 +139,7 @@ static class Program
         Assert(ShoeStacking.Violations(legal.AsEnumerable().Reverse().ToList()).Count==0,"stacking adjacency uses physical ports, not list order or group IDs");
         var rotated=Serialization.Copy(legal);foreach(var p in rotated){p.Position=p.Position.Rotate(90)+new V2(12000,1000);p.Rotation+=90;}
         Assert(ShoeStacking.Violations(rotated).Count==0,"24-48-24 adjacency survives whole-chain rotation");
-        var reverse=Serialization.Copy(legal);reverse[0].Position+=new V2(2000,600);reverse[0].Rotation=180;
+        var reverse=Serialization.Copy(legal);reverse[0].Position+=new V2(2000,Equipment.ShoeDepthMm);reverse[0].Rotation=180;
         Assert(ShoeStacking.Violations(reverse).Count==0,"opposite source block directions still recognise the same touching end face");
         Assert(ShoeStacking.Violations(ShoeLine("S48","S48","S48")).Select(i=>i.InstanceId).Distinct().Count()==3,"all-48 storage chains are explicitly rejected");
         Assert(ShoeStacking.Violations(ShoeLine("S24","S48","S48","S24")).Select(i=>i.InstanceId).Distinct().Count()==2,"two adjacent 48-person cabinets are both marked invalid");
@@ -29,7 +149,7 @@ static class Program
             var shortNeighbour=Serialization.Copy(legal);shortNeighbour[0].EquipmentId=id;shortNeighbour[0].Position.X=4000-shortNeighbour[0].Equipment.Length;
             Assert(ShoeStacking.Violations(shortNeighbour).Count==1,id+" touching the correct end cannot substitute for the required S24");
         }
-        var broadside=Serialization.Copy(legal);broadside[0].Position=new V2(4000,2600);
+        var broadside=Serialization.Copy(legal);broadside[0].Position=new V2(4000,2000+Equipment.ShoeDepthMm);
         Assert(ShoeStacking.Violations(broadside).Count==1,"a low cabinet beside a long face is not a cabinet-chain neighbour");
         var gap=Serialization.Copy(legal);gap[0].Position.X-=1;
         Assert(ShoeStacking.Violations(gap).Count==1,"a detached S24 cannot satisfy the stacking rule through an empty gap");
@@ -52,7 +172,7 @@ static class Program
         Assert(Validation.Evaluate(Project.Create(),room,legal).Checks[ShoeStacking.CheckKey]==CheckState.Pass,"valid mixed storage is not rejected merely because it contains S48");
         var project=Project.Create();var estimate=AreaPlanning.Estimate(project.Population,project.Rooms[0]);
         Assert(estimate.Options.Any(o=>o.Items.Any(i=>i.EquipmentId=="S48")) && estimate.Options.All(o=>o.Nominal>=600 && ShoeStacking.Violations(o.Items).Count==0),"area previews use the same 24-48-24 rule and still meet the declared target");
-        project.Rooms[0].Boundary=new Boundary{Width=10700,Height=10600};var generated=Layout.Generate(project,project.Rooms[0]);
+        project.Rooms[0].Boundary=new Boundary{Width=10800,Height=10900};var generated=Layout.Generate(project,project.Rooms[0]);
         Assert(generated.Candidates.Any(c=>c.Items.Any(i=>i.EquipmentId=="S48") && c.Statistics.Nominal>=600) && generated.Candidates.All(c=>ShoeStacking.Violations(c.Items).Count==0),"rectangle generation provides genuine target-capacity alternating stacks without any all-48 option");
     }
     static double Distance(double[] a,double[] b)=>Math.Sqrt(a.Select((v,i)=>(v-b[i])*(v-b[i])).Sum());
@@ -115,7 +235,7 @@ static class Program
         Assert(Serialization.Write(project)==original,"pre-boundary area preview does not alter room state or create a candidate");
         var shoes=project.Rooms[0];
         var shoeEstimate=AreaPlanning.Estimate(project.Population,shoes);
-        Assert(shoeEstimate.Options.Any(o=>Math.Abs(o.WidthMm-10700)<.01 && Math.Abs(o.HeightMm-10600)<.01 && Math.Abs(o.AreaM2-113.42)<.001 && o.Nominal==600),"600-person estimate reproduces documented 6-row R600 planning template");
+        Assert(shoeEstimate.Options.Any(o=>Math.Abs(o.WidthMm-10800)<.01 && Math.Abs(o.HeightMm-10900)<.01 && Math.Abs(o.AreaM2-117.72)<.001 && o.Nominal==600),"600-person estimate reproduces documented 6-row R650 planning template");
         Assert(shoeEstimate.Options.Any(o=>o.Items.Any(p=>p.EquipmentId=="S48") && o.Items.Any(p=>p.Equipment.IsShoe && p.CrossingEnabled)),"stacked estimate retains explicit low-cabinet crossing locations");
         shoes.Options.ShoeCapacities=new List<int>{18};shoes.Options.AllowStacking=false;
         Assert(AreaPlanning.Estimate(project.Population,shoes).Options.All(o=>o.Items.Where(i=>i.Equipment.IsShoe).All(i=>i.EquipmentId=="S18")),"area preview respects allowed real shoe modules and stacking opt-out");
@@ -143,6 +263,8 @@ static class Program
     }
     static void Main(string[] args)
     {
+        UpdatedDimensionsChecks();
+        IrregularBoundaryAndWorkflowChecks();
         ShoeStackingChecks();
         BoundaryEditingChecks();
         AreaAndIdentificationChecks();
@@ -162,7 +284,7 @@ static class Program
         var room=Make(RoomMode.Shoe);
         var shoe=new Placement{EquipmentId="S24",Position=new V2(1000,1000),CrossingEnabled=true};
         var stat=Validation.Evaluate(p,room,new[]{shoe});
-        Assert(stat.Nominal==24 && stat.Effective==null && stat.ProjectionM2==1.2,"unverified capacity is never certified");
+        Assert(stat.Nominal==24 && stat.Effective==null && stat.ProjectionM2==1.3,"unverified capacity is never certified");
         shoe.NativeCopyDetached=true;
         Assert(Validation.Evaluate(p,room,new[]{shoe}).Checks["connections"]==CheckState.RequiresInput,"native copied groups cannot silently remain linked to original assemblies");
         shoe.NativeCopyDetached=false;
@@ -184,17 +306,17 @@ static class Program
         room=Make(RoomMode.Shoe,10000,6000);room.Options.ShoeBoundaryMm=1000;
         room.DirtySeed=new V2(5000,1000);room.CleanSeed=new V2(5000,5000);
         var barrier=new Placement{EquipmentId="S24",Position=new V2(4000,2700),CrossingEnabled=true};
-        room.Closures.Add(new Region{Points=Geometry.Rect(0,2700,4000,600)});
-        room.Closures.Add(new Region{Points=Geometry.Rect(6000,2700,4000,600)});
+        room.Closures.Add(new Region{Points=Geometry.Rect(0,2700,4000,Equipment.ShoeDepthMm)});
+        room.Closures.Add(new Region{Points=Geometry.Rect(6000,2700,4000,Equipment.ShoeDepthMm)});
         stat=Validation.Evaluate(p,room,new[]{barrier});
         Assert(stat.Checks["hygiene_without_crossing"]==CheckState.Pass && stat.Checks["workflow_with_crossing"]==CheckState.Pass,"real end closures isolate and a low cabinet reconnects workflow");
         room.Closures.RemoveAt(1);
         Assert(Validation.Evaluate(p,room,new[]{barrier}).Checks["hygiene_without_crossing"]==CheckState.Fail,"removing closure reopens bypass");
-        room.Closures.Add(new Region{Points=Geometry.Rect(6010,2700,3990,600)});
+        room.Closures.Add(new Region{Points=Geometry.Rect(6010,2700,3990,Equipment.ShoeDepthMm)});
         Assert(Validation.Evaluate(p,room,new[]{barrier}).Checks["hygiene_without_crossing"]==CheckState.Fail,"ten millimeter crack is detected without coarse raster");
-        room.Closures[1].Points=Geometry.Rect(6000,2700,4000,600);barrier.EquipmentId="S48";barrier.CrossingEnabled=false;
+        room.Closures[1].Points=Geometry.Rect(6000,2700,4000,Equipment.ShoeDepthMm);barrier.EquipmentId="S48";barrier.CrossingEnabled=false;
         Assert(Validation.Evaluate(p,room,new[]{barrier}).Checks["workflow_with_crossing"]==CheckState.Fail,"stacked storage does not invent crossing");
-        var baseline=p.Rooms[0];baseline.Boundary=new Boundary{Width=10700,Height=10600};
+        var baseline=p.Rooms[0];baseline.Boundary=new Boundary{Width=10800,Height=10900};
         var before=Serialization.Write(baseline.Placed);
         var search=Layout.Generate(p,baseline);
         Assert(search.Candidates.Count>1 && search.Candidates.Any(c=>c.Statistics.Nominal>=600),"600-person multiple real shoe arrangements");
@@ -273,6 +395,7 @@ static class Program
         {
             var r=p.Rooms.First(r=>r.Mode==mode);r.Boundary=new Boundary{Width=10000,Height=10000};
             r.Placed.Add(new Placement{RoomId=r.Id,EquipmentId=mode==RoomMode.Shoe?"S24":mode==RoomMode.FirstChange?"LOCKER12":"HANGER_CUSTOM",Position=new V2(2000,2000),Length=1000});
+            if(mode==RoomMode.Shoe)r.Placed.Add(new Placement{RoomId=r.Id,EquipmentId=Equipment.CornerId,Position=new V2(4000,2000)});
             string exported=LayoutExport.Write(p,r);var doc=JObject.Parse(exported);
             Assert((string?)doc["units"]=="mm" && doc["instances"]![0]!["effective_capacity"]!.Type==JTokenType.Null && (string?)doc["validation"]!["source_block"]=="requires_input",mode+" export preserves schema units and unverified status");
             if(fixtureDir!=null){System.IO.Directory.CreateDirectory(fixtureDir);System.IO.File.WriteAllText(System.IO.Path.Combine(fixtureDir,mode+".json"),exported);}

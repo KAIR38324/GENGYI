@@ -32,16 +32,17 @@ namespace Gengyi.Core
             if (item.PhysicalOutline != null && item.PhysicalOutline.Count >= 3)
                 return item.PhysicalOutline.Select(item.Transform).ToList();
             var e = item.Equipment;
-            if (e.Id != "CORNER_R600")
+            if (!e.IsCorner)
             {
                 if (e.Length <= 0 || e.Depth <= 0) throw new ArgumentException(e.Id + "缺少真实占地轮廓，不能虚构尺寸。");
                 return Rect(0, 0, e.Length, e.Depth).Select(item.Transform).ToList();
             }
-            // R600 quarter sector; 64 chords, maximum chord error <0.046 mm.
+            // Current R650 quarter sector; 64 chords, maximum chord error <0.049 mm.
+            // Legacy R600 keeps its original radius when reopening an older drawing.
             // This is an explicit reconstruction assumption, never the original CAD contour.
             var points = new List<V2> { item.Transform(new V2()) };
             for (int i = 0; i <= 64; i++)
-                points.Add(item.Transform(new V2(600 * Math.Cos(i * Math.PI / 128), 600 * Math.Sin(i * Math.PI / 128))));
+                points.Add(item.Transform(new V2(e.Length * Math.Cos(i * Math.PI / 128), e.Length * Math.Sin(i * Math.PI / 128))));
             return points;
         }
         public static Geo Footprint(Placement item) => Polygon(Outline(item));
@@ -50,7 +51,16 @@ namespace Gengyi.Core
             var list = shapes.ToList();
             return list.Count == 0 ? Factory.CreatePolygon() : UnaryUnionOp.Union(list);
         }
-        public static Geo RoomPolygon(Boundary b) => Polygon(Rect(0, 0, b.Width, b.Height));
+        public static List<V2> RoomOutline(Boundary b) => b.Outline==null?Rect(0,0,b.Width,b.Height):
+            b.Outline.Select(p=>new V2(p.X,p.Y)).ToList();
+        public static Geo RoomPolygon(Boundary b) => Polygon(RoomOutline(b));
+        public static Geo RegionFootprint(Region region)
+        {
+            if(double.IsNaN(region.CurveToleranceMm) || double.IsInfinity(region.CurveToleranceMm) || region.CurveToleranceMm<0)
+                throw new ArgumentException("现场曲线轮廓的误差标定无效。");
+            var shape=Polygon(region.Points);
+            return region.CurveToleranceMm==0?shape:shape.Buffer(region.CurveToleranceMm/Math.Cos(Math.PI/64),16);
+        }
         public static List<Polygon> Components(Geo free)
         {
             var output = new List<Polygon>();

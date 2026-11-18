@@ -15,18 +15,21 @@ namespace Gengyi.Core
         public string Message { get; set; } = "";
     }
 
-    public static class Layout
+    public static partial class Layout
     {
         public static SearchResult Generate(Project project, Room room, CancellationToken cancellation = default)
         {
             project.Population.Validate(); room.Options.Validate();
-            if (room.Boundary == null) throw new ArgumentException("请先为当前房间选择矩形。");
+            if (room.Boundary == null) throw new ArgumentException("请先为当前房间选择边界。");
             if (room.ConstraintIssue.Length > 0) throw new ArgumentException(room.ConstraintIssue);
-            if (room.Boundary.Width <= 0 || room.Boundary.Height <= 0) throw new ArgumentException("矩形面积必须为正。");
+            if (room.Boundary.Width <= 0 || room.Boundary.Height <= 0) throw new ArgumentException("房间边界面积必须为正。");
             var output = new SearchResult();
             var clock = Stopwatch.StartNew();
             int target = project.Population.For(room);
-            var candidates = room.Mode == RoomMode.Shoe ? Shoes(room, target) : room.Mode == RoomMode.FirstChange ? Lockers(room, target) : Hangers(room, target);
+            var actualBoundary=Geometry.RoomPolygon(room.Boundary);
+            var boxBoundary=Geometry.Polygon(Geometry.Rect(0,0,room.Boundary.Width,room.Boundary.Height));
+            bool rectangular=actualBoundary.SymmetricDifference(boxBoundary).Area<=Geometry.AreaTolerance;
+            var candidates = !rectangular ? PolygonCandidates(room,target,cancellation) : room.Mode == RoomMode.Shoe ? Shoes(room, target) : room.Mode == RoomMode.FirstChange ? Lockers(room, target) : Hangers(room, target);
             var signatures = new HashSet<string>();
             // Geometric enumeration does not mutate the room's placed entities or selected draft.
             var rough = new List<Candidate>();
@@ -47,7 +50,7 @@ namespace Gengyi.Core
                 cancellation.ThrowIfCancellationRequested();
                 if (clock.ElapsedMilliseconds > 10000 && output.Candidates.Count > 0) { output.TimedOut = true; break; }
                 foreach (var p in c.Items) ResolveMapping(project, p);
-                FitAroundObstacles(room,c,cancellation);
+                if(rectangular)FitAroundObstacles(room,c,cancellation);
                 c.Statistics = Validation.Evaluate(project, room, c.Items);
                 output.Candidates.Add(c);
             }
@@ -58,8 +61,9 @@ namespace Gengyi.Core
                 .ThenBy(c => c.Statistics.Blocked)
                 .ThenBy(c => c.Statistics.NominalSurplus)
                 .ThenBy(c => c.Statistics.ProjectionM2).Take(8).ToList();
-            output.Message = output.Candidates.Count == 0 ? "当前候选家族没有找到可放下的柜链/挂架组合；请检查矩形与允许柜型。没有穷举任意构型，不能宣称全局无解。" :
+            output.Message = output.Candidates.Count == 0 ? "当前候选家族没有找到可放下的柜链/挂架组合；请检查实际边界、净距与允许柜型。没有穷举任意构型，不能宣称全局无解。" :
                 "得到 " + output.Candidates.Count + " 个不同预排；各项检查独立显示，待核预排不等于有效方案。";
+            if(!rectangular)output.Message+=" 按实际轮廓保守分区排布，缺角和障碍不放柜；不足时显示差额，不把外包矩形当作房间，也不据此认定全局无解。";
             if (output.TimedOut) output.Message += " 搜索达到时间预算，未完成穷举，不能据此认定最优或无解。";
             return output;
         }
@@ -94,10 +98,10 @@ namespace Gengyi.Core
                 double height = (vertical ? b.Width : b.Height) - 2 * margin;
                 foreach (int connector in room.Options.ShoeCapacities.Select(c => c / 3 * 250).Distinct())
                 {
-                    int maxRows = Math.Min(24, (int)Math.Floor((height + connector) / (600 + connector)));
+                    int maxRows = Math.Min(24, (int)Math.Floor((height + connector) / (Equipment.ShoeDepthMm + connector)));
                     for (int rows = 3; rows <= maxRows; rows++)
                     {
-                        double maxRun = Math.Floor((width - 1200) / 500) * 500;
+                        double maxRun = Math.Floor((width - 2*Equipment.CornerRadiusMm) / 500) * 500;
                         if (maxRun < 1000) continue;
                         double desired = Math.Ceiling(Math.Max(1000, (target - (rows - 1) * connector * .012) / (rows * .012)) / 500) * 500;
                         var runs=new List<double>{Math.Min(desired,maxRun),Math.Min(desired+500,maxRun),maxRun};
@@ -125,14 +129,14 @@ namespace Gengyi.Core
         }
 
         // Shared by pre-boundary area planning and the actual rectangle solver.
-        // R600 is the documented quarter-sector assumption, not an original block.
+        // R650 is the current quarter-sector assumption, not an original block.
         internal static Candidate ShoeTemplate(Room room, int rows, double run, int connector, List<int> chain, int stackedTarget = 0)
         {
             var c = new Candidate { Family = $"S形{rows}排/{connector}连接" };
             double margin = room.Options.ShoeBoundaryMm;
             for (int row = 0; row < rows; row++)
             {
-                double x = margin + 600, y = margin + row * (600 + connector);
+                double x = margin + Equipment.CornerRadiusMm, y = margin + row * (Equipment.ShoeDepthMm + connector);
                 foreach (int cap in chain)
                 {
                     c.Items.Add(Place(room, "S" + cap, x, y, group: c.Id));
@@ -140,10 +144,10 @@ namespace Gengyi.Core
                 }
                 if (row == rows - 1) continue;
                 bool right = row % 2 == 0;
-                double cx = right ? margin + 600 + run : margin + 600;
-                c.Items.Add(Place(room, "CORNER_R600", cx, y + 600, right ? 270 : 180, group: c.Id));
-                c.Items.Add(Place(room, "S" + (connector * 12 / 1000), right ? cx + 600 : cx, y + 600, 90, group: c.Id));
-                c.Items.Add(Place(room, "CORNER_R600", cx, y + 600 + connector, right ? 0 : 90, group: c.Id));
+                double cx = right ? margin + Equipment.CornerRadiusMm + run : margin + Equipment.CornerRadiusMm;
+                c.Items.Add(Place(room, Equipment.CornerId, cx, y + Equipment.ShoeDepthMm, right ? 270 : 180, group: c.Id));
+                c.Items.Add(Place(room, "S" + (connector * 12 / 1000), right ? cx + Equipment.CornerRadiusMm : cx, y + Equipment.ShoeDepthMm, 90, group: c.Id));
+                c.Items.Add(Place(room, Equipment.CornerId, cx, y + Equipment.ShoeDepthMm + connector, right ? 0 : 90, group: c.Id));
             }
             ShoeStacking.StackToTarget(c.Items,stackedTarget);
             if (c.Items.Any(p => p.EquipmentId == "S48")) c.Family += "/局部叠放";
@@ -247,7 +251,7 @@ namespace Gengyi.Core
         {
             if(room.Obstacles.Count==0 || candidate.Items.Count==0)return;
             var union=Geometry.Union(candidate.Items.Select(Geometry.Footprint));
-            var obstacle=Geometry.Union(room.Obstacles.Select(r=>(NetTopologySuite.Geometries.Geometry)Geometry.Polygon(r.Points)));
+            var obstacle=Geometry.Union(room.Obstacles.Select(Geometry.RegionFootprint));
             var envelope=union.EnvelopeInternal;var b=room.Boundary!;
             double margin=room.Mode==RoomMode.Shoe?room.Options.ShoeBoundaryMm:0;
             double minX=margin-envelope.MinX,maxX=b.Width-margin-envelope.MaxX;
@@ -257,7 +261,7 @@ namespace Gengyi.Core
             double operation=room.Options.OperationDepthMm??room.Options.PlanningAisleMm;
             foreach(var region in room.Obstacles)
             {
-                var ob=Geometry.Polygon(region.Points).EnvelopeInternal;
+                var ob=Geometry.RegionFootprint(region).EnvelopeInternal;
                 xs.Add(ob.MinX-envelope.MaxX-operation);xs.Add(ob.MaxX-envelope.MinX+operation);
                 ys.Add(ob.MinY-envelope.MaxY-operation);ys.Add(ob.MaxY-envelope.MinY+operation);
             }

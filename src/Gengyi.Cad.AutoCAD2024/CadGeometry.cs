@@ -23,15 +23,53 @@ namespace Gengyi.Cad.AutoCAD2024
         {
             return f.ToLocal(A(p));
         }
-        internal static Boundary ReadRectangle(Polyline pl,double units,Frame? reference=null)
+        internal static Frame UcsFrame(Matrix3d ucs,double units)=>new Frame{Origin=A(ucs.CoordinateSystem3d.Origin),
+            XAxis=A(ucs.CoordinateSystem3d.Xaxis.GetNormal()),YAxis=A(ucs.CoordinateSystem3d.Yaxis.GetNormal()),MillimetersPerDrawingUnit=units};
+        internal static Boundary ReadBoundary(Polyline pl,double units,Frame? reference=null)
         {
-            if(!pl.Closed || pl.NumberOfVertices!=4 || Enumerable.Range(0,4).Any(i=>Math.Abs(pl.GetBulgeAt(i))>1e-9))
-                throw new ArgumentException("请选择闭合的四边直线矩形多段线；分开的线段、圆弧和不规则轮廓暂不支持。");
-            var a=pl.GetPoint3dAt(0);var x=pl.GetPoint3dAt(1)-a;var y=pl.GetPoint3dAt(3)-a;
-            if(x.Length<1e-8 || y.Length<1e-8 || Math.Abs(x.GetNormal().DotProduct(y.GetNormal()))>1e-8 ||
-                (pl.GetPoint3dAt(2)-(a+x+y)).Length>1e-6)throw new ArgumentException("所选轮廓不是有效矩形。可用 RECTANG 绘制自己的房间范围后选择。");
-            return BoundaryEditing.AlignOrientation(new Boundary{NativeHandle=pl.Handle.ToString(),Width=x.Length*units,Height=y.Length*units,
-                Frame=new Frame{Origin=A(a),XAxis=A(x.GetNormal()),YAxis=A(y.GetNormal()),MillimetersPerDrawingUnit=units}},reference);
+            if(!pl.Closed || pl.NumberOfVertices<3)throw new ArgumentException("请选择闭合的房间多段线，至少三个顶点；开口轮廓不能作为房间边界。");
+            if(units<=0 || double.IsNaN(units) || double.IsInfinity(units))throw new ArgumentException("房间单位标定无效。");
+            var world=PolylinePoints(pl,.05/units);var origin=world[0];var normal=pl.Normal.GetNormal();
+            var x=world.Skip(1).Select(p=>p-origin).FirstOrDefault(v=>v.Length>1e-8);
+            if(x.Length<=1e-8)throw new ArgumentException("房间边界不能退化成一个点。");
+            x=x.GetNormal();var y=normal.CrossProduct(x).GetNormal();
+            if(reference!=null)
+            {
+                var rx=V(reference.XAxis);var ry=V(reference.YAxis);
+                if(Math.Abs(Math.Abs(rx.CrossProduct(ry).GetNormal().DotProduct(normal))-1)<1e-7)
+                {x=rx;y=ry;}
+            }
+            var frame=new Frame{Origin=A(origin),XAxis=A(x),YAxis=A(y),MillimetersPerDrawingUnit=units};
+            var points=world.Select(p=>Local(frame,p)).ToList();
+            var polygon=Gengyi.Core.Geometry.Polygon(points); // Reject self-intersections before any offset.
+            bool curved=Enumerable.Range(0,pl.NumberOfVertices).Any(i=>Math.Abs(pl.GetBulgeAt(i))>1e-10);
+            if(curved)
+            {
+                // Chords of re-entrant arcs may extend beyond the real room. Offset inward
+                // by at least their maximum error, including the buffer's arc approximation.
+                const int quadrants=16;
+                double inset=.05/Math.Cos(Math.PI/(4*quadrants));
+                var usable=polygon.Buffer(-inset,quadrants);
+                if(!(usable is NetTopologySuite.Geometries.Polygon single) || single.IsEmpty || single.NumInteriorRings>0)
+                    throw new ArgumentException("弧边按0.05mm误差保守内缩后无法形成单个有效房间，请检查过窄或自接触的轮廓。");
+                if(single.ExteriorRing.NumPoints>20001)throw new ArgumentException("弧边保守轮廓超过20000点，请简化多段线后重试。");
+                points=single.ExteriorRing.Coordinates.Take(single.ExteriorRing.NumPoints-1).Select(p=>new V2(p.X,p.Y)).ToList();
+            }
+            var boundary=BoundaryEditing.FromOutline(points,frame,pl.Handle.ToString());
+            boundary.SourceAreaMm2=Math.Abs(pl.Area)*units*units;boundary.CurveToleranceMm=curved?.05:0;
+            return boundary;
+        }
+        // Kept for older command callers; actual validation now uses the complete room outline.
+        internal static Boundary ReadRectangle(Polyline pl,double units,Frame? reference=null)=>ReadBoundary(pl,units,reference);
+        internal static bool SameBoundary(Boundary a,Boundary b)
+        {
+            if(Math.Abs(a.Width-b.Width)>1e-5 || Math.Abs(a.Height-b.Height)>1e-5 ||
+                Math.Abs(a.AreaM2-b.AreaM2)>1e-8 || Math.Abs(a.CurveToleranceMm-b.CurveToleranceMm)>1e-8 ||
+                Math.Abs(a.Frame.MillimetersPerDrawingUnit-b.Frame.MillimetersPerDrawingUnit)>1e-10)return false;
+            if(Enumerable.Range(0,3).Any(i=>Math.Abs(a.Frame.Origin[i]-b.Frame.Origin[i])*a.Frame.MillimetersPerDrawingUnit>1e-5 ||
+                Math.Abs(a.Frame.XAxis[i]-b.Frame.XAxis[i])>1e-9 || Math.Abs(a.Frame.YAxis[i]-b.Frame.YAxis[i])>1e-9))return false;
+            var pa=Gengyi.Core.Geometry.RoomOutline(a);var pb=Gengyi.Core.Geometry.RoomOutline(b);
+            return pa.Count==pb.Count && !pa.Where((p,i)=>p.Distance(pb[i])>1e-5).Any();
         }
         internal static Matrix3d SourceToStandard(BlockMapping mapping) =>
             Matrix3d.Scaling(mapping.MillimetersPerSourceUnit,Point3d.Origin) *
@@ -81,9 +119,12 @@ namespace Gengyi.Cad.AutoCAD2024
             if(answer.Status==PromptStatus.Cancel)throw new Cancelled();
             return answer.Status==PromptStatus.None?defaultValue:answer.StringResult;
         }
-        internal static List<Point3d> PolylinePoints(Polyline polyline)
+        internal static List<Point3d> PolylinePoints(Polyline polyline,double maximumChordError=.05)
         {
             if(!polyline.Closed || polyline.NumberOfVertices<3)throw new ArgumentException("请选择闭合多段线。");
+            if(maximumChordError<=0 || double.IsNaN(maximumChordError) || double.IsInfinity(maximumChordError))throw new ArgumentException("轮廓离散误差必须是有效正数。");
+            const int maxPoints=20000;
+            if(polyline.NumberOfVertices>maxPoints)throw new ArgumentException("轮廓超过20000个顶点，请简化多段线后重试。");
             var result=new List<Point3d>();
             for(int i=0;i<polyline.NumberOfVertices;i++)
             {
@@ -92,11 +133,12 @@ namespace Gengyi.Cad.AutoCAD2024
                 {
                     var arc=polyline.GetArcSegmentAt(i);
                     double angle=4*Math.Atan(Math.Abs(polyline.GetBulgeAt(i)));
-                    double step=2*Math.Acos(Math.Max(-1,1-.05/arc.Radius));
+                    double step=2*Math.Acos(Math.Max(-1,1-maximumChordError/arc.Radius));
                     int count=Math.Max(2,(int)Math.Ceiling(angle/Math.Max(1e-6,step)));
-                    if(count>20000)throw new ArgumentException("弧形轮廓过于复杂，请选择实际设备占地轮廓。");
+                    if((long)result.Count+count>maxPoints)throw new ArgumentException("轮廓离散后超过20000点，请简化多段线后重试。");
                     for(int n=0;n<count;n++)result.Add(polyline.GetPointAtParameter(i+(double)n/count));
                 }
+                if(result.Count>maxPoints)throw new ArgumentException("轮廓离散后超过20000点，请简化多段线后重试。");
             }
             return result;
         }

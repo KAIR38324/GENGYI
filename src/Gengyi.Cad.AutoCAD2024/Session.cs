@@ -27,6 +27,12 @@ namespace Gengyi.Cad.AutoCAD2024
         }
         private void Changed(object sender,ObjectEventArgs args){if(!Writing){Dirty=true;WitnessPath=null;}}
         private void Erased(object sender,ObjectErasedEventArgs args){if(!Writing){Dirty=true;WitnessPath=null;}}
+        private static void Unverified(Placement item,string issue)
+        {
+            item.NativeGeometryUnverified=true;
+            if(item.NativeIssue.Length>0 && !item.NativeIssue.Contains(issue))item.NativeIssue+=" "+issue;
+            else if(item.NativeIssue.Length==0)item.NativeIssue=issue;
+        }
         internal void Refresh()
         {
             using(var transaction=Document.Database.TransactionManager.StartOpenCloseTransaction())
@@ -48,9 +54,9 @@ namespace Gengyi.Cad.AutoCAD2024
                         var id=Document.Database.GetObjectId(false,new Handle(Convert.ToInt64(boundary.NativeHandle,16)),0);
                         if(id.IsErased)throw new ArgumentException("所选房间边界已删除。");
                         if(!(transaction.GetObject(id,OpenMode.ForRead) is Polyline pl))
-                            throw new ArgumentException("原生编辑后的边界不再是闭合直线矩形。");
-                        var next=CadGeometry.ReadRectangle(pl,boundary.Frame.MillimetersPerDrawingUnit,boundary.Frame);
-                        if(Serialization.Write(next.Frame)!=Serialization.Write(boundary.Frame) || Math.Abs(next.Width-boundary.Width)>1e-6 || Math.Abs(next.Height-boundary.Height)>1e-6)
+                            throw new ArgumentException("原生编辑后的房间边界不再是有效闭合多段线。");
+                        var next=CadGeometry.ReadBoundary(pl,boundary.Frame.MillimetersPerDrawingUnit,boundary.Frame);
+                        if(!CadGeometry.SameBoundary(next,boundary))
                         {
                             string issue=room.ConstraintIssue;
                             BoundaryEditing.Replace(room,next,false);
@@ -60,6 +66,7 @@ namespace Gengyi.Cad.AutoCAD2024
                     catch(System.Exception ex) when(ex is ArgumentException || ex is Autodesk.AutoCAD.Runtime.Exception)
                     {room.ConstraintIssue=ex.Message;}
                 }
+                if(Preview.PlanningVisible && (Preview.PlanningRoomId!=Room.Id || Preview.PlanningSignature!=AreaPlanning.Signature(Project.Population,Room)))Preview.Clear();
                 foreach(var room in Project.Rooms)room.Placed.Clear();
                 var table=(BlockTable)transaction.GetObject(Document.Database.BlockTableId,OpenMode.ForRead);
                 var model=(BlockTableRecord)transaction.GetObject(table[BlockTableRecord.ModelSpace],OpenMode.ForRead);
@@ -83,15 +90,16 @@ namespace Gengyi.Cad.AutoCAD2024
                     if(Project.Mappings.TryGetValue(item.MappingKey,out var mapping))
                     {
                         CadGeometry.ReadTransform(room,item,reference,mapping);
+                        if(!mapping.Accepts(item))Unverified(item,Blocks.MappingMismatch(item));
                         var definition=(BlockTableRecord)transaction.GetObject(reference.IsDynamicBlock?reference.DynamicBlockTableRecord:reference.BlockTableRecord,OpenMode.ForRead);
-                        if(definition.Name!=mapping.BlockName){item.NativeGeometryUnverified=true;item.NativeIssue="原生块定义已变，需重新绑定设备。";}
+                        if(definition.Name!=mapping.BlockName)Unverified(item,"原生块定义已变，需重新绑定设备。");
                         if(reference.IsDynamicBlock)
                             foreach(DynamicBlockReferenceProperty property in reference.DynamicBlockReferencePropertyCollection)
                                 if(!property.ReadOnly && (!mapping.DynamicValues.TryGetValue(property.PropertyName,out var expected) ||
                                     Convert.ToString(property.Value,System.Globalization.CultureInfo.InvariantCulture)!=Convert.ToString(expected,System.Globalization.CultureInfo.InvariantCulture)))
-                                {item.NativeGeometryUnverified=true;item.NativeIssue="原生动态属性已变化，需核对并重新绑定，不能继续用旧容量。";}
+                                Unverified(item,"原生动态属性已变化，需核对并重新绑定，不能继续用旧容量。");
                     }
-                    else{item.NativeGeometryUnverified=true;item.NativeIssue="缺少原块坐标标定，当前几何和容量未核。";}
+                    else Unverified(item,"缺少原块坐标标定，当前几何和容量未核。");
                     room.Placed.Add(item);
                 }
                 foreach(var room in Project.Rooms)
@@ -104,7 +112,10 @@ namespace Gengyi.Cad.AutoCAD2024
                             var id=Document.Database.GetObjectId(false,new Handle(Convert.ToInt64(region.NativeHandle,16)),0);
                             if(id.IsErased){region.Points.Clear();continue;}
                             if(transaction.GetObject(id,OpenMode.ForRead) is Polyline pl)
-                                region.Points=CadGeometry.PolylinePoints(pl).Select(p=>CadGeometry.Local(room.Boundary.Frame,p)).ToList();
+                            {
+                                region.Points=CadGeometry.PolylinePoints(pl,.05/room.Boundary.Frame.MillimetersPerDrawingUnit).Select(p=>CadGeometry.Local(room.Boundary.Frame,p)).ToList();
+                                region.CurveToleranceMm=Enumerable.Range(0,pl.NumberOfVertices).Any(i=>Math.Abs(pl.GetBulgeAt(i))>1e-10)?.05:0;
+                            }
                         }
                         catch(Autodesk.AutoCAD.Runtime.Exception){region.Points.Clear();}
                         catch(ArgumentException ex){room.ConstraintIssue="现场轮廓失效："+ex.Message;}
@@ -185,7 +196,7 @@ namespace Gengyi.Cad.AutoCAD2024
             try
             {
                 s.Refresh();Panel?.Update(s);
-                if(s.Room.PreviewVisible && s.Room.Candidates.Count>0)s.Preview.Show(s,s.Room.Candidates[Math.Min(s.Room.SelectedCandidate,s.Room.Candidates.Count-1)].Items);
+                if(!s.Preview.PlanningVisible && s.Room.PreviewVisible && s.Room.Candidates.Count>0)s.Preview.Show(s,s.Room.Candidates[Math.Min(s.Room.SelectedCandidate,s.Room.Candidates.Count-1)].Items);
             }
             catch(Exception ex){s.Dirty=false;doc.Editor.WriteMessage("\nGENGYI 同步失败："+ex.Message);}
         }

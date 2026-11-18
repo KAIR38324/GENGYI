@@ -1,9 +1,9 @@
 {
-  "version": "0.3.2",
+  "version": "0.4.0",
   "source_base_commit": "46a5b44a45c2f9966d7d564f2ea6063622e34a5f",
   "target": "AutoCAD 2024 Windows x64 .NET Framework 4.8",
   "python_reference_tests": 16,
-  "core_checks": 100,
+  "core_checks": 148,
   "json_schema_export_modes": [
     "shoe",
     "first_change",
@@ -11,15 +11,31 @@
   ],
   "original_image_integrity": "10 of 10 SHA256 and byte sizes match",
   "build": "Release net48 x64, zero warnings and errors",
-  "command_count": 31,
+  "command_count": 32,
   "host_acceptance": "not_run_no_Windows_AutoCAD_in_this_environment",
   "original_native_blocks": "not_in_repository; local binding/import implemented",
   "source_visual_acceptance": "pending_real_CAD_comparison",
   "statement": "Implementation and pure-code evidence are separate from real host acceptance.",
   "startup_loading": "LoadOnAutoCADStartup=True; configured and package checked; actual host launch pending",
   "pre_boundary_area_preview": "implemented for all three modes; whole-room planning envelopes and equipment projections separated; assumptions visible",
-  "ui_workflow": "room/population > immediate area and dimensions > temporary rectangle > candidates > native commit; advanced controls separated",
+  "ui_workflow": "room/population > stacking choice > GYPLAN temporary equipment preview > own irregular boundary > actual-layout candidates > native commit",
   "cabinet_identification": "model, people, per-side levels, stack box count and height visible on preview/native attributes; GYSETUP migrates old managed instances",
-  "custom_boundary_reselection": "own rectangle is the primary entry; placed block world positions, obstacle/closure/seed world positions retained; clockwise orientation normalized; noncoplanar changes rejected atomically",
-  "S48_adjacency": "mandatory physical S24-S48-S24; no adjacent or end S48; same rule in estimates, generation, edits and commit; invalid S48 excluded from geometric capacity"
+  "custom_boundary_reselection": "closed concave, sloped and arc polylines; actual outline and measured area; all existing world positions retained; complete native outline changes detected",
+  "S48_adjacency": "mandatory physical S24-S48-S24; no adjacent or end S48; same rule in estimates, generation, edits and commit; invalid S48 excluded from geometric capacity",
+  "project_data_format": "2.0; reads and upgrades legacy 1.0 rectangles; old plugin rejects new format",
+  "polygon_generation": "all three modes use conservative bounded partition of actual room minus obstacles; full footprints and true shoe boundary distance checked; deficits explicit, no optimality claim",
+  "curve_handling": "<=0.05mm chord tolerance; inner room and outer obstacle proxies; original polyline area retained; isolation proofs approximate pending real curve/interface verification",
+  "current_equipment_dimensions": {
+    "shoe_depth_mm": 650,
+    "central_ventilation_duct_mm": 50,
+    "corner_radius_mm": 650,
+    "locker_mm": [
+      1140,
+      500,
+      2095
+    ],
+    "locker_people": 12
+  },
+  "source_dimension_guard": "old source depth 0/600 or legacy R600 remains unchanged but cannot certify 650; new bind records depth, rebuild names include geometry dimensions",
+  "drawing_labels": "at most two compact lines; type, people and essential levels; R650 one line"
 }

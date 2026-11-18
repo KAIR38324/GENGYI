@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace Gengyi.Core
@@ -28,6 +29,21 @@ namespace Gengyi.Core
     /// <summary>Pre-boundary planning envelopes, never a certificate of effective capacity.</summary>
     public static class AreaPlanning
     {
+        public static bool IsPreviewCurrent(Population population,Room room,int option)=>option>=0 &&
+            room.PlanningPreviewOption==option && room.PlanningPreviewSignature.Length>0 && room.PlanningPreviewSignature==Signature(population,room);
+        public static string Signature(Population population,Room room)
+        {
+            var options=Serialization.Copy(room.Options);
+            options.ShoeCapacities=options.ShoeCapacities.Distinct().OrderBy(c=>c).ToList();
+            string Number(decimal value)=>value.ToString("G29",CultureInfo.InvariantCulture);
+            return Serialization.Write(new
+            {
+                room.Id,room.Mode,room.Gender,room.CustomPeople,
+                ReserveOverride=room.ReserveOverride.HasValue?Number(room.ReserveOverride.Value):null,
+                population.Registered,population.Shift,MaleRatio=Number(population.MaleRatio),Reserve=Number(population.Reserve),Options=options,
+                Equipment.ShoeDepthMm,Equipment.ShoeDuctMm,Equipment.CornerRadiusMm
+            });
+        }
         private sealed class Draft
         {
             internal string Name = "";
@@ -50,7 +66,7 @@ namespace Gengyi.Core
                 Basis = (room.CustomPeople.HasValue ? "本房自定义人数" : room.Mode == RoomMode.SecondChange ? "按当班人数" : "按在册人数") +
                     $"；备用 {(room.ReserveOverride ?? population.Reserve)*100:0.##}%；目标 {target} 人",
                 Assumptions = room.Mode == RoomMode.Shoe
-                    ? $"含四周 {o.ShoeBoundaryMm:0} mm 边距与假定 R600 扇形角；连接净距至少 {aisle:0} mm。48人柜必须24—48—24交错。门柱、封闭与脏净绕行待选框后校核。"
+                    ? $"鞋柜深{Equipment.ShoeDepthMm:0} mm（含中间{Equipment.ShoeDuctMm:0} mm通风道），含四周 {o.ShoeBoundaryMm:0} mm 边距与假定 R{Equipment.CornerRadiusMm:0} 扇形角；连接净距至少 {aisle:0} mm。48人柜必须24—48—24交错。门柱、封闭与脏净绕行待选框后校核。"
                     : $"按操作/通行净距 {aisle:0} mm、背距 {o.RearGapMm:0} mm 预排；门柱、更衣动作及辅助设备另核。" +
                         (room.Mode == RoomMode.SecondChange ? $" 挂钩节距 {o.HookPitchMm}、端距 {o.HookStartMarginMm}/{o.HookEndMarginMm} mm；450 mm 仅架体深度，衣物与安装待核。" : "")
             };
@@ -113,8 +129,8 @@ namespace Gengyi.Core
                             int r = rows, con = connector; double len = run;
                             output.Add(new Draft
                             {
-                                W = run + 1200 + 2*o.ShoeBoundaryMm,
-                                H = rows*600 + (rows-1)*connector + 2*o.ShoeBoundaryMm,
+                                W = run + 2*Equipment.CornerRadiusMm + 2*o.ShoeBoundaryMm,
+                                H = rows*Equipment.ShoeDepthMm + (rows-1)*connector + 2*o.ShoeBoundaryMm,
                                 Stacked = stacked,
                                 Name = $"S形{rows}排 · {(stacked ? "24—48—24交错" : "单柜3层")}",
                                 Build = () => Layout.ShoeTemplate(room, r, len, con, chain, stacked ? target : 0).Items

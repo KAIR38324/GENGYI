@@ -31,11 +31,21 @@ namespace Gengyi.Cad.AutoCAD2024
             if(mapping.Provenance=="legacy_generated" || mapping.Provenance=="missing")throw new ArgumentException("此来源不能作为生产设备块。");
             if(mapping.EquipmentId!=item.EquipmentId)throw new ArgumentException("块映射与设备型号不一致，禁止用缩放或旧映射冒充新柜型。");
             if(!mapping.Accepts(item))
-                throw new ArgumentException("挂架 "+item.Length+" mm 的原块挂点与候选不一致；请为该长度/挂点绑定原块或明确重建，不能拉伸或虚计挂钩。");
+                throw new ArgumentException(MappingMismatch(item));
             return mapping;
+        }
+        internal static string MappingMismatch(Placement item)
+        {
+            if(item.Equipment.IsShoe)return "鞋柜原块尚未按650mm总深（含50mm通风道）标定；旧600mm块仅作历史几何读取，请重新绑定或明确重建。";
+            if(item.Equipment.IsCorner)return item.EquipmentId==Equipment.CornerId?
+                "转角原块尚未按R650标定，请绑定实际R650原块或明确重建；不能缩放旧R600冒充新转角。":
+                "旧R600仅作历史几何读取，当前方案要求R650，请绑定新转角或明确重建。";
+            if(item.EquipmentId=="HANGER_CUSTOM")return "挂架 "+item.Length+" mm 的原块挂点与候选不一致；请为该长度/挂点绑定原块或明确重建，不能拉伸或虚计挂钩。";
+            return "原块标定与当前设备尺寸不一致，请重新绑定并核对实际尺寸。";
         }
         internal static BlockReference Create(Database database,Transaction transaction,Room room,Placement item,BlockMapping mapping,bool append)
         {
+            if(!mapping.Accepts(item))throw new ArgumentException(MappingMismatch(item));
             var table=(BlockTable)transaction.GetObject(database.BlockTableId,OpenMode.ForRead);
             if(!table.Has(mapping.BlockName))throw new ArgumentException("图中缺少块定义："+mapping.BlockName);
             var result=new BlockReference(Point3d.Origin,table[mapping.BlockName]);
@@ -74,20 +84,26 @@ namespace Gengyi.Cad.AutoCAD2024
             }
             catch{if(result.ObjectId.IsNull)result.Dispose();throw;}
         }
-        private static void AppendDescriptions(BlockReference reference,Database database,Transaction transaction,Room room,Placement item)
+        private static void AppendDescriptions(BlockReference reference,Database database,Transaction transaction,Room room,Placement item,bool canPosition=true)
         {
+            var layouts=LabelLayout(item,room.Options).ToDictionary(l=>"GY_DESCRIPTION_"+l.Index,StringComparer.OrdinalIgnoreCase);
             var existing=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach(ObjectId id in reference.AttributeCollection)
             {
                 var attribute=(AttributeReference)transaction.GetObject(id,OpenMode.ForRead);
-                existing.Add(attribute.Tag);
-                if(attribute.Tag=="GY_STACK")
-                {attribute.UpgradeOpen();attribute.Erase();}
+                if(attribute.Tag.Equals("GY_STACK",StringComparison.OrdinalIgnoreCase) ||
+                    (attribute.Tag.StartsWith("GY_DESCRIPTION_",StringComparison.OrdinalIgnoreCase) &&
+                     (!layouts.ContainsKey(attribute.Tag) || existing.Contains(attribute.Tag))))
+                {attribute.UpgradeOpen();attribute.Erase();continue;}
+                if(!layouts.TryGetValue(attribute.Tag,out var layout))continue;
+                existing.Add(attribute.Tag);attribute.UpgradeOpen();
+                if(canPosition)ConfigureLabel(attribute,database,room,item,layout);else attribute.TextString=layout.Text;
+                attribute.Invisible=false;attribute.LockPositionInBlock=true;attribute.AdjustAlignment(database);
             }
-            foreach(var layout in LabelLayout(item,room.Options))
+            foreach(var layout in layouts.Values)
             {
                 string tag="GY_DESCRIPTION_"+layout.Index;
-                if(existing.Contains(tag))continue;
+                if(existing.Contains(tag) || !canPosition)continue;
                 // These belong to this reference, not the user's source block definition.
                 // Native MOVE/COPY/ROTATE and DWG persistence carry them with the cabinet.
                 var label=new AttributeReference{Tag=tag,Invisible=false,LockPositionInBlock=true};
@@ -104,21 +120,28 @@ namespace Gengyi.Cad.AutoCAD2024
         {
             // Explicit GYSETUP migration only. Idle remains read-only. ATTSYNC can remove
             // attributes without source definitions; opening the panel restores our labels.
-            var missing=new List<(Room room,Placement item,ObjectId id)>();
+            var missing=new List<(Room room,Placement item,ObjectId id,bool canPosition)>();
             using(var tx=session.Document.Database.TransactionManager.StartOpenCloseTransaction())
                 foreach(var room in session.Project.Rooms.Where(r=>r.Boundary!=null))
-                    foreach(var item in room.Placed.Where(p=>!p.NativeGeometryUnverified && p.NativeHandle.Length>0))
+                    foreach(var item in room.Placed.Where(p=>p.NativeHandle.Length>0))
                     {
                         var id=session.Document.Database.GetObjectId(false,new Handle(Convert.ToInt64(item.NativeHandle,16)),0);
                         if(id.IsErased || !(tx.GetObject(id,OpenMode.ForRead) is BlockReference reference))continue;
-                        var tags=reference.AttributeCollection.Cast<ObjectId>().Select(a=>((AttributeReference)tx.GetObject(a,OpenMode.ForRead)).Tag).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                        if(tags.Contains("GY_STACK") || LabelLayout(item,room.Options).Any(l=>!tags.Contains("GY_DESCRIPTION_"+l.Index)))missing.Add((room,item,id));
+                        bool canPosition=!item.NativeGeometryUnverified || item.NativeIssue==MappingMismatch(item);
+                        var labels=LabelLayout(item,room.Options).ToDictionary(l=>"GY_DESCRIPTION_"+l.Index,l=>l.Text,StringComparer.OrdinalIgnoreCase);
+                        var attributes=reference.AttributeCollection.Cast<ObjectId>().Select(a=>(AttributeReference)tx.GetObject(a,OpenMode.ForRead)).ToList();
+                        var own=attributes.Where(a=>a.Tag.StartsWith("GY_DESCRIPTION_",StringComparison.OrdinalIgnoreCase)).ToList();
+                        bool changed=attributes.Any(a=>a.Tag.Equals("GY_STACK",StringComparison.OrdinalIgnoreCase)) ||
+                            own.GroupBy(a=>a.Tag,StringComparer.OrdinalIgnoreCase).Any(g=>g.Count()>1) ||
+                            own.Any(a=>!labels.TryGetValue(a.Tag,out var text) || text!=a.TextString) ||
+                            (canPosition && labels.Keys.Any(tag=>!own.Any(a=>a.Tag.Equals(tag,StringComparison.OrdinalIgnoreCase))));
+                        if(changed)missing.Add((room,item,id,canPosition));
                     }
             if(missing.Count>0)
                 session.Edit(tx=>
                 {
                     foreach(var entry in missing)
-                        AppendDescriptions((BlockReference)tx.GetObject(entry.id,OpenMode.ForWrite),session.Document.Database,tx,entry.room,entry.item);
+                        AppendDescriptions((BlockReference)tx.GetObject(entry.id,OpenMode.ForWrite),session.Document.Database,tx,entry.room,entry.item,entry.canPosition);
                 });
             return missing.Count;
         }
@@ -133,7 +156,7 @@ namespace Gengyi.Cad.AutoCAD2024
         {
             var e=item.Equipment;
             var description=EquipmentPresentation.Describe(item,options);
-            var lines=description.Lines.ToArray();
+            var lines=description.CompactLines.ToArray();
             double minX=0,minY=0,width=e.Length,depth=e.Depth;
             if(item.PhysicalOutline!=null && item.PhysicalOutline.Count>0)
             {
@@ -141,22 +164,24 @@ namespace Gengyi.Cad.AutoCAD2024
                 width=item.PhysicalOutline.Max(p=>p.X)-minX;depth=item.PhysicalOutline.Max(p=>p.Y)-minY;
             }
             if(width<=0 || depth<=0)yield break;
-            if(depth<250)lines=new[]{description.Title};
+            if(depth<250)lines=lines.Take(1).ToArray();
             double cx=minX+width/2,cy=minY+depth/2;
-            if(e.Id=="CORNER_R600")
+            if(e.IsCorner)
             {
                 // The sector's bounding-box centre can lie outside the curved corner.
-                cx=250;cy=250;width=410;depth=300;
+                cx=e.Length*.4;cy=e.Depth*.4;width=e.Length*.68;depth=e.Depth*.5;
             }
             double characters=lines.Max(s=>s.Sum(c=>c<128?.6:1));
             double height=Math.Min(90,Math.Min(width*.86/Math.Max(1,characters),depth*.78/(lines.Length*1.4)));
             for(int n=0;n<lines.Length;n++)
-                yield return new LabelLine{Index=n,Text=lines[n],Center=new V2(cx,cy+(lines.Length-1-2*n)*height*.7),Height=height};
+                yield return new LabelLine{Index=n,Text=lines[n],Center=new V2(cx,e.IsShoe && lines.Length==2?
+                    minY+depth*(n==0?.75:.25):cy+(lines.Length-1-2*n)*height*.7),Height=height};
         }
         private static void ConfigureLabel(DBText label,Database database,Room room,Placement item,LabelLine layout)
         {
             label.SetDatabaseDefaults(database);label.Layer="0";label.ColorIndex=7;
             label.TextString=layout.Text;label.Height=layout.Height;
+            label.Normal=Vector3d.ZAxis;label.Rotation=0;label.WidthFactor=1;label.Oblique=0;
             label.HorizontalMode=TextHorizontalMode.TextCenter;label.VerticalMode=TextVerticalMode.TextVerticalMid;
             label.Position=new Point3d(layout.Center.X,layout.Center.Y,0);label.AlignmentPoint=label.Position;
             label.TransformBy(CadGeometry.ToWorld(room.Boundary!.Frame)*
@@ -204,17 +229,19 @@ namespace Gengyi.Cad.AutoCAD2024
                     original.Provenance=="original_cad" && original.Accepts(item) && table.Has(original.BlockName))continue;
                 var e=item.Equipment;
                 if(e.Length<=0 || e.Depth<=0)throw new ArgumentException(e.Id+"缺少原始外形，不能虚构重建；请导入实际块与占地。");
-                string signature=e.Id+"/"+item.Length+"/"+Serialization.Write(item.LocalHooks);
+                if(e.IsCorner && e.Id!=Equipment.CornerId)throw new ArgumentException("旧R600只读兼容；请重新生成使用R650的候选后重建，不会自动缩放旧转角。");
+                string signature=Serialization.Write(new{format="reconstructed-650-duct-v3",id=e.Id,length=e.Length,depth=e.Depth,height=e.Height,
+                    radius=e.IsCorner?e.Length:0,duct=e.IsShoe?Equipment.ShoeDuctMm:0,hooks=item.LocalHooks});
                 string name="GY_IMAGE_"+e.Id+"_"+Hash(Encoding.UTF8.GetBytes(signature)).Substring(0,12);
                 if(!table.Has(name))
                 {
                     var record=new BlockTableRecord{Name=name,Origin=Point3d.Origin,Units=UnitsValue.Millimeters};
                     table.Add(record);transaction.AddNewlyCreatedDBObject(record,true);
                     void Add(Entity entity){entity.Layer="0";record.AppendEntity(entity);transaction.AddNewlyCreatedDBObject(entity,true);}
-                    if(e.Id=="CORNER_R600")
+                    if(e.IsCorner)
                     {
                         var pl=new Polyline();pl.AddVertexAt(0,new Point2d(0,0),0,0,0);
-                        pl.AddVertexAt(1,new Point2d(600,0),Math.Tan(Math.PI/8),0,0);pl.AddVertexAt(2,new Point2d(0,600),0,0,0);
+                        pl.AddVertexAt(1,new Point2d(e.Length,0),Math.Tan(Math.PI/8),0,0);pl.AddVertexAt(2,new Point2d(0,e.Depth),0,0,0);
                         pl.Closed=true;Add(pl);
                     }
                     else if(e.Id=="HANGER_CUSTOM")
@@ -227,8 +254,19 @@ namespace Gengyi.Cad.AutoCAD2024
                     else
                     {
                         var pl=new Polyline();int n=0;foreach(var q in Geometry.Rect(0,0,e.Length,e.Depth))pl.AddVertexAt(n++,new Point2d(q.X,q.Y),0,0,0);pl.Closed=true;Add(pl);
-                        for(int col=1;col<e.Columns;col++)Add(new Line(new Point3d(col*e.Length/e.Columns,0,0),new Point3d(col*e.Length/e.Columns,e.Depth,0)));
-                        if(e.IsShoe)Add(new Line(new Point3d(0,300,0),new Point3d(e.Length,300,0)));
+                        if(e.IsShoe)
+                        {
+                            double bottom=(e.Depth-Equipment.ShoeDuctMm)/2,top=bottom+Equipment.ShoeDuctMm;
+                            Add(new Line(new Point3d(0,bottom,0),new Point3d(e.Length,bottom,0)));
+                            Add(new Line(new Point3d(0,top,0),new Point3d(e.Length,top,0)));
+                            for(int col=1;col<e.Columns;col++)
+                            {
+                                double x=col*e.Length/e.Columns;
+                                Add(new Line(new Point3d(x,0,0),new Point3d(x,bottom,0)));
+                                Add(new Line(new Point3d(x,top,0),new Point3d(x,e.Depth,0)));
+                            }
+                        }
+                        else for(int col=1;col<e.Columns;col++)Add(new Line(new Point3d(col*e.Length/e.Columns,0,0),new Point3d(col*e.Length/e.Columns,e.Depth,0)));
                     }
                 }
                 string evidence=e.Id=="LOCKER12"?"07":e.Id=="HANGER_CUSTOM"?"08":e.Id=="CUP100"?"06":"05";
@@ -236,7 +274,7 @@ namespace Gengyi.Cad.AutoCAD2024
                 using(var stream=typeof(Blocks).Assembly.GetManifestResourceStream("Gengyi.SourceEvidence")??throw new ArgumentException("缺少原图来源清单。"))
                 using(var reader=new StreamReader(stream))
                     source=(JObject)JObject.Parse(reader.ReadToEnd())["images"]!.Single(image=>(string?)image["id"]==evidence);
-                InstallMapping(session.Project,new BlockMapping{EquipmentId=e.Id,Length=item.Length,BlockName=name,SourceBlockName=name,
+                InstallMapping(session.Project,new BlockMapping{EquipmentId=e.Id,EquipmentDepthMm=e.Depth,Length=item.Length,BlockName=name,SourceBlockName=name,
                     SourceHash=(string)source["sha256"]!,GeometryHash=Hash(Encoding.UTF8.GetBytes(signature)),SourceEvidence=(string)source["file"]!,
                     Provenance="image_reconstructed",ReviewStatus="not_run",FootprintVerified=false,
                     PhysicalOutline=Geometry.Outline(new Placement{EquipmentId=e.Id,Length=item.Length}),

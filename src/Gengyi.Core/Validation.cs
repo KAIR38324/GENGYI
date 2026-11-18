@@ -16,12 +16,12 @@ namespace Gengyi.Core
                 result.Checks[key] = CheckState.NotRun;
             if (room.Boundary == null)
             {
-                Issue(result, "BOUNDARY_MISSING", "", "尚未选定本房间矩形。");
+                Issue(result, "BOUNDARY_MISSING", "", "尚未选定本房间边界。");
                 result.Checks["boundary"] = CheckState.RequiresInput;
                 return result;
             }
             var boundary = Geometry.RoomPolygon(room.Boundary);
-            result.BoundaryM2 = boundary.Area / 1000000;
+            result.BoundaryM2 = room.Boundary.AreaM2;
             var physical = new List<Geo>();
             var invalid = new HashSet<string>();
             var stackingIssues=ShoeStacking.Violations(items);
@@ -31,7 +31,7 @@ namespace Gengyi.Core
             bool contextValid = room.ConstraintIssue.Length == 0;
             if (!contextValid) Issue(result, "BOUNDARY_CHANGED_INVALID", "", room.ConstraintIssue);
             foreach (var region in room.Obstacles.Concat(room.Closures))
-                try { obstacles.Add(Geometry.Polygon(region.Points)); }
+                try { obstacles.Add(Geometry.RegionFootprint(region)); }
                 catch (ArgumentException ex) { contextValid=false; Issue(result, "CONSTRAINT_INVALID", region.NativeHandle, ex.Message); }
             var blockUnion = Geometry.Union(obstacles);
             bool geometryPass = true, boundaryPass = true, sourcePass = true, cornerApprox = false;
@@ -39,17 +39,21 @@ namespace Gengyi.Core
             {
                 var item = items[i];
                 var e = item.Equipment;
+                string key = item.MappingKey.Length > 0 ? item.MappingKey : BlockMapping.For(e.Id, item.Length);
+                bool hasMapping=project.Mappings.TryGetValue(key,out var mapping);
+                bool obsoleteDimensions=e.Id==Equipment.LegacyCornerId || (e.IsShoe || e.IsCorner) && hasMapping &&
+                    !mapping!.Accepts(item) && (item.MappingKey.Length>0 || item.NativeHandle.Length>0);
                 int nominal = Capacity.Nominal(item, room.Options);
-                if(item.NativeGeometryUnverified || !contextValid)result.GeometryUnverified+=nominal;
+                if(item.NativeGeometryUnverified || !contextValid || obsoleteDimensions)result.GeometryUnverified+=nominal;
                 result.Nominal += nominal;
                 if(e.IsShoe)result.NominalShoeCells+=e.Capacity*2;
                 result.Groups += nominal > 0 ? 1 : 0;
                 result.Boxes += e.Boxes;
                 if (e.IsShoe) { if (e.Boxes == 2) result.StackedShoe++; else result.SingleShoe++; }
-                if (e.Id == "CORNER_R600") result.Corners++;
+                if (e.IsCorner) result.Corners++;
                 if (e.Id == "HANGER_CUSTOM") { result.HangerLengthMm += item.Length; result.HangerSegments++; }
                 else if(e.Id=="LOCKER12")result.LockerCabinets++;
-                else if(!e.IsShoe && e.Id!="CORNER_R600")result.AuxiliaryCount++;
+                else if(!e.IsShoe && !e.IsCorner)result.AuxiliaryCount++;
                 Geo shape;
                 try { shape = Geometry.Footprint(item); }
                 catch (ArgumentException ex)
@@ -58,6 +62,12 @@ namespace Gengyi.Core
                     Issue(result, "OUTLINE_MISSING", item.Id, ex.Message);
                 }
                 physical.Add(shape);
+                if(obsoleteDimensions)
+                {
+                    invalid.Add(item.Id);geometryPass=false;
+                    Issue(result,"SHOE_DIMENSION_OUTDATED",item.Id,
+                        $"设备源块不符合当前{Equipment.ShoeDepthMm:0}mm占地/{Equipment.ShoeDuctMm:0}mm中间通风道及R{Equipment.CornerRadiusMm:0}转角参数；保留旧实体原状，请重新绑定或按新参数重建，不能按新尺寸计为有效。");
+                }
                 if (item.NativeGeometryUnverified || !contextValid || Math.Abs(item.ScaleX - 1) > 1e-6 || Math.Abs(item.ScaleY - 1) > 1e-6 ||
                     (room.Options.Orthogonal && !Geometry.Orthogonal(item.Rotation)))
                 {
@@ -80,11 +90,10 @@ namespace Gengyi.Core
                         invalid.Add(item.Id); invalid.Add(items[j].Id); geometryPass = false;
                         Issue(result, "CABINET_OVERLAP", item.Id, "与 " + items[j].Id + " 发生实体重叠。");
                     }
-                string key = item.MappingKey.Length > 0 ? item.MappingKey : BlockMapping.For(e.Id, item.Length);
-                if (item.NativeGeometryUnverified || !project.Mappings.TryGetValue(key, out var mapping) || mapping.Provenance == "legacy_generated" ||
+                if (item.NativeGeometryUnverified || !hasMapping || !mapping!.Accepts(item) || mapping.Provenance == "legacy_generated" ||
                     !mapping.FootprintVerified || mapping.ReviewStatus != "approved" || mapping.BlockName.Length == 0)
                     sourcePass = false;
-                if (e.Id == "CORNER_R600" && item.PhysicalOutline == null) cornerApprox = true;
+                if (e.IsCorner && item.PhysicalOutline == null) cornerApprox = true;
             }
             var cabinetUnion = Geometry.Union(physical);
             result.Checks["connections"] = CheckState.Pass;
@@ -124,7 +133,13 @@ namespace Gengyi.Core
                 if(!isolation && seeds)
                     Issue(result,dirtyWalk>=0 && dirtyWalk==cleanWalk?"WALKING_BYPASS":"GEOMETRIC_OPENING","",
                         dirtyWalk>=0 && dirtyWalk==cleanWalk?"按配置的人员宽度，不跨柜仍可绕端到另一侧；S 外观不等于隔离。":"实体阻隔有几何开口；人员膨胀后过不去也不能冒充真实封闭，需核对封板/接口。");
-                if (cornerApprox && isolation) result.Checks["hygiene_without_crossing"] = CheckState.ApproximateOnly;
+                bool curvedTopology=room.Boundary.CurveToleranceMm>0 || room.Obstacles.Concat(room.Closures).Any(r=>r.CurveToleranceMm>0);
+                if ((cornerApprox || curvedTopology) && isolation) result.Checks["hygiene_without_crossing"] = CheckState.ApproximateOnly;
+                if(curvedTopology)
+                {
+                    if(result.Checks["walking_without_crossing"]==CheckState.Pass)result.Checks["walking_without_crossing"]=CheckState.ApproximateOnly;
+                    Issue(result,"CURVED_TOPOLOGY_PENDING","","曲线边界/封闭物采用保守离散轮廓；临界缝隙可能受近似影响，不能直接认定脏净隔离已通过，需核对真实曲线与端部接口。");
+                }
             }
             else
             {

@@ -2,7 +2,7 @@
 
 本轮用户已指定 CAD 2024，当前按 **AutoCAD 2024 Windows x64** 建立开发目标。对应 API R24.3、插件目标 .NET Framework 4.8；本机具体补丁和产品名称由 `GYENV` 读取。Linux 工作区可编译 DLL，真实 CAD 加载必须在 Windows 宿主执行。
 
-当前 v0.3.2 包含三模式核心与 31 个 CAD 命令，使用流程见源码中的 `docs/09_USER_GUIDE.md`（安装包内为 `USAGE.md`）。已通过纯代码测试和 API 编译，但没有在 Windows CAD 内执行加载、图块视觉比对、拖动或撤销验收。
+当前 v0.4.0 包含三模式核心与 32 个 CAD 命令，使用流程见源码中的 `docs/09_USER_GUIDE.md`（安装包内为 `USAGE.md`）。已通过纯代码测试和 API 编译，但没有在 Windows CAD 内执行加载、图块视觉比对、拖动或撤销验收。
 
 ## 工具与依赖
 
@@ -50,7 +50,7 @@ python tools/reference_calculations.py --people 600 --reserve 0
 5. 记录输出及实际加载结果到本地忽略目录 `local_private/`。宿主验证需要确认命令执行成功，且图元、单位、UCS 和安全加载设置没有被修改。
 6. 执行 `GYSETUP`，按 `USAGE.md` 完成三个模式、房间切换、取消、一次撤销和保存重开的实际验收。`GYENV` 是只读检查，后续布置命令才会修改授权房间的块和项目数据。
 
-持久安装时将完整 `Gengyi.bundle` 放到 `%APPDATA%\Autodesk\ApplicationPlugins\`。v0.3.2 清单只声明 Windows x64/R24.3，显式启用启动加载，并保留全部31个命令的按需加载后备；不在复制目录期间即时加载。启动加载不自动打开面板。自动发现及启动加载仍待真实宿主核查，开发调试也可使用上述明确的 `NETLOAD` 步骤。
+持久安装时将完整 `Gengyi.bundle` 放到 `%APPDATA%\Autodesk\ApplicationPlugins\`。v0.4.0 清单只声明 Windows x64/R24.3，显式启用启动加载，并保留全部32个命令的按需加载后备；不在复制目录期间即时加载。启动加载不自动打开面板。自动发现及启动加载仍待真实宿主核查，开发调试也可使用上述明确的 `NETLOAD` 步骤。
 
 `GYENV` 是只读诊断：不会生成块、扫描公司图纸、修改图层或将图纸上传。单位未设置或不是毫米时仅提示后续布置需要单位转换/校准，不自动改图纸单位。
 
@@ -70,3 +70,15 @@ python tools/reference_calculations.py --people 600 --reserve 0
 - [Autodesk：AutoCAD.NET 24.3.0](https://www.nuget.org/packages/AutoCAD.NET/24.3.0)：2024 托管 API 编译引用；不随本插件重新打包。
 
 本次实际结果见 [environment-report.md](environment-report.md)。
+
+## 不规则边界与选界前预览
+
+GYPLAN在没有房间边界时按人数和叠放选项显示临时设备/参考框，完成后保存独立的规划签名和选项编号。签名不含边界或随机设备ID，人数、叠放和空间参数改变会要求重新预览。GYRECT Select读取闭合房间多段线的完整轮廓，支持凹形、斜边及明确误差下的弧边。Width/Height只表示归一化外包；Outline保存实际规划轮廓，SourceAreaMm2保留原生曲线实测面积，CurveToleranceMm记录误差。
+
+三模式按实际区域保守分区，完整设备足印和鞋柜真实边距参与最终连续几何校核，不裁柜、不缩放、不占凹角。最多48个轴坐标、24个区域；属于有界构型搜索，缺量如实报告，不能宣称全局最优或无解。弧边/曲线封闭物相关隔离结论保持近似或待核。
+
+图内项目格式升级为2.0，新版读取1.0矩形旧图并保留数据；旧插件将拒绝2.0格式，避免把新不规则轮廓忽略后误算为矩形。外部布局导出的schema_version仍为1.0，project_state中保存完整的新项目状态。
+
+## 当前设备尺寸与源块防误用
+
+鞋柜总深650、中央风道50、转角CORNER_R650。CORNER_R600只读兼容，保留其原600几何但不能新生成或认证。BlockMapping.EquipmentDepthMm记录实核深度；缺字段/旧600映射不匹配时，原实体保持原样并标未核，新预览不会假绑定旧块。重建哈希含长深高、半径与风道尺寸，避免相同S24名称沿用旧600定义。已知图纸单位下绑定时校核实际长/深，不能把R600重新声明为R650。CompactLines控制图面最多两行，完整Detail可保留供数据解释。

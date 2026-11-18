@@ -12,6 +12,10 @@ from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 import json
 import math
 
+SHOE_DEPTH_MM = 650
+SHOE_DUCT_MM = 50
+CORNER_RADIUS_MM = 650
+
 
 def _integer(value: int, name: str, minimum: int = 0) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
@@ -40,10 +44,11 @@ def shoe_module(capacity: int) -> dict:
         "columns_per_side_per_box": columns, "vertical_cells_per_box": 3,
         "stack_boxes": stacks, "physical_box_count": stacks,
         "cells_per_person": 2, "total_cells": 2 * capacity,
-        "length_mm": columns * 250, "depth_mm": 600, "height_mm": 600 * stacks,
+        "length_mm": columns * 250, "depth_mm": SHOE_DEPTH_MM, "height_mm": 600 * stacks,
         "nominal_cell_allocation_mm": [250, 300, 200],
+        "central_ventilation_duct_mm": SHOE_DUCT_MM,
         "internal_clear_cell_mm": None,
-        "footprint_m2": columns * 250 * 600 / 1_000_000,
+        "footprint_m2": columns * 250 * SHOE_DEPTH_MM / 1_000_000,
         "ordinary_crossing_surface_assumed": stacks == 1,
         "crossing_verified": False,
         "dimension_status": "source_and_latest_user" if capacity == 24 else "derived_custom_module",
@@ -160,7 +165,7 @@ def template_estimate(rows: int, run_mm: int, connector_mm: int,
                       boundary_mm: int = 1000) -> dict:
     """Canonical OUTSIDE tangent quarter-sector estimate, not source-CAD reconstruction.
 
-    d=R=600. Every connector lies outside straight-row ends; its length fills
+    d=R=650, including the 50 mm central duct. Every connector lies outside straight-row ends; its length fills
     the clear row gap. Two quarter sectors per U turn. End seals, doors,
     fixtures, actual corner shape and face access are deliberately unverified.
     """
@@ -173,7 +178,7 @@ def template_estimate(rows: int, run_mm: int, connector_mm: int,
     counts = Counter({k: v * rows for k, v in run["counts"].items()})
     for k, v in connector["counts"].items():
         counts[k] += v * (rows - 1)
-    r = d = 600
+    r, d = CORNER_RADIUS_MM, SHOE_DEPTH_MM
     turns = rows - 1
     corners = turns * 2
     width = run_mm + 2 * r + 2 * boundary_mm
@@ -182,7 +187,7 @@ def template_estimate(rows: int, run_mm: int, connector_mm: int,
     straight_area = (rows * run_mm * d + turns * connector_mm * d) / 1_000_000
     corner_area = corners * math.pi * r ** 2 / 4 / 1_000_000
     return {
-        "template_id": f"outside_tangent_sector_R600_r{rows}_L{run_mm}_c{connector_mm}",
+        "template_id": f"outside_tangent_sector_R650_r{rows}_L{run_mm}_c{connector_mm}",
         "rows": rows, "run_mm": run_mm, "connector_mm": connector_mm,
         "clear_row_gap_mm_in_this_template": connector_mm,
         "boundary_clearance_mm": boundary_mm,

@@ -12,6 +12,12 @@ namespace Gengyi.Cad.AutoCAD2024
     internal sealed class Preview : IDisposable
     {
         private readonly List<Entity> entities=new List<Entity>();
+        internal bool PlanningVisible{get;private set;}
+        // A completed display is an event even when the same saved option is shown again.
+        // Clear deliberately preserves this counter so idle refreshes cannot replay the event.
+        internal long PlanningRevision{get;private set;}
+        internal string PlanningSignature{get;private set;}="";
+        internal string PlanningRoomId{get;private set;}="";
         internal void Overlay(Entity entity)
         {
             entities.Add(entity);
@@ -20,6 +26,10 @@ namespace Gengyi.Cad.AutoCAD2024
         internal void Show(Session session,IEnumerable<Placement> items)
         {
             Clear();if(session.Room.Boundary==null)return;
+            ShowItems(session,session.Room,items);
+        }
+        private void ShowItems(Session session,Room room,IEnumerable<Placement> items)
+        {
             try
             {
                 using(var transaction=session.Document.Database.TransactionManager.StartOpenCloseTransaction())
@@ -27,14 +37,37 @@ namespace Gengyi.Cad.AutoCAD2024
                     foreach(var item in items)
                     {
                         Entity entity;
-                        try{entity=Blocks.Create(session.Document.Database,transaction,session.Room,item,Blocks.Mapping(session,item),false);}
-                        catch(ArgumentException){entity=CadGeometry.Polyline(Gengyi.Core.Geometry.Outline(item),session.Room.Boundary.Frame,1);}
+                        try{entity=Blocks.Create(session.Document.Database,transaction,room,item,Blocks.Mapping(session,item),false);}
+                        catch(ArgumentException){entity=CadGeometry.Polyline(Gengyi.Core.Geometry.Outline(item),room.Boundary!.Frame,1);}
                         entities.Add(entity);
                         TransientManager.CurrentTransientManager.AddTransient(entity,TransientDrawingMode.DirectShortTerm,128,new IntegerCollection());
-                        foreach(var text in Blocks.Labels(session.Document.Database,session.Room,item))Overlay(text);
+                        foreach(var text in Blocks.Labels(session.Document.Database,room,item))Overlay(text);
                     }
                     transaction.Commit();
                 }
+            }
+            catch{Clear();throw;}
+        }
+        internal void ShowPlanning(Session session,RectangleEstimate estimate,Boundary boundary,bool rotated,string signature)
+        {
+            Clear();
+            try
+            {
+                var room=new Room{Id=session.Room.Id,Mode=session.Room.Mode,Boundary=Serialization.Copy(boundary),Options=Serialization.Copy(session.Room.Options)};
+                var items=estimate.Items.Select(original=>
+                {
+                    var item=Serialization.Copy(original);
+                    if(rotated){item.Position=new V2(estimate.HeightMm-original.Position.Y,original.Position.X);item.Rotation=Gengyi.Core.Geometry.Normalize(original.Rotation+90);}
+                    Gengyi.Core.Layout.ResolveMapping(session.Project,item);return item;
+                }).ToList();
+                ShowItems(session,room,items);
+                Overlay(CadGeometry.Polyline(Gengyi.Core.Geometry.RoomOutline(boundary),boundary.Frame,3));
+                double height=Math.Max(120,Math.Min(boundary.Width,boundary.Height)/45);
+                var text=new DBText();text.SetDatabaseDefaults(session.Document.Database);text.ColorIndex=3;
+                text.TextString=$"人数预排参考 · {boundary.Width/1000:0.##}×{boundary.Height/1000:0.##}m · {boundary.AreaM2:0.##}㎡ · 非实际房间边界";
+                text.Position=new Point3d(0,boundary.Height+height,0);text.Height=height;
+                text.TransformBy(CadGeometry.ToWorld(boundary.Frame));Overlay(text);
+                PlanningVisible=true;PlanningSignature=signature;PlanningRoomId=session.Room.Id;PlanningRevision++;
             }
             catch{Clear();throw;}
         }
@@ -47,6 +80,7 @@ namespace Gengyi.Cad.AutoCAD2024
                 finally{entity.Dispose();}
             }
             entities.Clear();
+            PlanningVisible=false;PlanningSignature="";PlanningRoomId="";
         }
         public void Dispose()=>Clear();
     }

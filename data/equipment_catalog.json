@@ -8,7 +8,7 @@
       "name": "12人双面鞋柜",
       "dimensions_mm": {
         "length": 1000,
-        "depth": 600,
+        "depth": 650,
         "height": 600
       },
       "people_capacity_nominal": 12,
@@ -31,7 +31,15 @@
         "references/original_images/05-1794325039166.png",
         "user_2026-11-17_latest"
       ],
-      "cad_block_provenance": "missing"
+      "cad_block_provenance": "missing",
+      "original_image_dimensions_mm": {
+        "length": 1000,
+        "depth": 600,
+        "height": 600
+      },
+      "central_ventilation_duct_mm": 50,
+      "nominal_depth_each_face_mm": 300,
+      "depth_evidence": "user_override_2026-11-18_650_including_50mm_duct"
     },
     {
       "id": "S18",
@@ -39,7 +47,7 @@
       "name": "18人双面鞋柜",
       "dimensions_mm": {
         "length": 1500,
-        "depth": 600,
+        "depth": 650,
         "height": 600
       },
       "people_capacity_nominal": 18,
@@ -62,7 +70,15 @@
         "references/original_images/05-1794325039166.png",
         "user_2026-11-17_latest"
       ],
-      "cad_block_provenance": "missing"
+      "cad_block_provenance": "missing",
+      "original_image_dimensions_mm": {
+        "length": 1500,
+        "depth": 600,
+        "height": 600
+      },
+      "central_ventilation_duct_mm": 50,
+      "nominal_depth_each_face_mm": 300,
+      "depth_evidence": "user_override_2026-11-18_650_including_50mm_duct"
     },
     {
       "id": "S24",
@@ -70,7 +86,7 @@
       "name": "24人双面鞋柜",
       "dimensions_mm": {
         "length": 2000,
-        "depth": 600,
+        "depth": 650,
         "height": 600
       },
       "people_capacity_nominal": 24,
@@ -93,7 +109,15 @@
         "references/original_images/05-1794325039166.png",
         "user_2026-11-17_latest"
       ],
-      "cad_block_provenance": "missing"
+      "cad_block_provenance": "missing",
+      "original_image_dimensions_mm": {
+        "length": 2000,
+        "depth": 600,
+        "height": 600
+      },
+      "central_ventilation_duct_mm": 50,
+      "nominal_depth_each_face_mm": 300,
+      "depth_evidence": "user_override_2026-11-18_650_including_50mm_duct"
     },
     {
       "id": "S48",
@@ -101,7 +125,7 @@
       "name": "48人双面鞋柜",
       "dimensions_mm": {
         "length": 2000,
-        "depth": 600,
+        "depth": 650,
         "height": 1200
       },
       "people_capacity_nominal": 48,
@@ -124,7 +148,15 @@
         "references/original_images/05-1794325039166.png",
         "user_2026-11-17_latest"
       ],
-      "cad_block_provenance": "missing"
+      "cad_block_provenance": "missing",
+      "original_image_dimensions_mm": {
+        "length": 2000,
+        "depth": 600,
+        "height": 1200
+      },
+      "central_ventilation_duct_mm": 50,
+      "nominal_depth_each_face_mm": 300,
+      "depth_evidence": "user_override_2026-11-18_650_including_50mm_duct"
     },
     {
       "id": "CORNER_R600",
@@ -138,7 +170,26 @@
       "sources": [
         "references/original_images/05-1794325039166.png",
         "references/original_images/02-18753.jpg"
-      ]
+      ],
+      "active_for_new_layout": false,
+      "superseded_by": "CORNER_R650"
+    },
+    {
+      "id": "CORNER_R650",
+      "kind": "corner",
+      "name": "R650四分之一圆弧转角",
+      "radius_mm": 650,
+      "radius_definition": "not_specified_inner_outer_or_centerline",
+      "height_mm": 600,
+      "nominal_people_capacity": 0,
+      "cad_block_provenance": "missing",
+      "sources": [
+        "references/original_images/05-1794325039166.png",
+        "references/original_images/02-18753.jpg",
+        "user_2026-11-18_R650"
+      ],
+      "active_for_new_layout": true,
+      "dimension_evidence": "user_confirmed_radius_650_2026-11-18"
     },
     {
       "id": "LOCKER12",

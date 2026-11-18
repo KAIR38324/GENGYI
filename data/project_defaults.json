@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_local_date": "2026-11-17",
+  "updated_local_date": "2026-11-18",
   "units": "mm",
   "registered_people": 600,
   "peak_shift_people": 300,
@@ -50,7 +50,7 @@
     "vip_entry": "north",
     "knife_exit": "south"
   },
-  "footnote": "项目默认参数，不替代原始块和矩形内实际可用性校核",
+  "footnote": "项目默认参数，不替代原始块、实际闭合边界与使用条件校核",
   "required_first_release_room_modes": [
     "shoe",
     "first_change",
@@ -64,5 +64,21 @@
     "female_second"
   ],
   "room_state_isolation": true,
-  "shoe_boundary_rule_applies_to_other_modes": false
+  "shoe_boundary_rule_applies_to_other_modes": false,
+  "workflow": [
+    "population",
+    "stacking_choice",
+    "planning_preview",
+    "actual_closed_boundary",
+    "generate_adjust_commit"
+  ],
+  "boundary_shapes": [
+    "closed_concave_polyline",
+    "sloped_polyline",
+    "arc_polyline",
+    "rectangle"
+  ],
+  "shoe_depth_mm": 650,
+  "shoe_ventilation_duct_mm": 50,
+  "corner_radius_mm": 650
 }

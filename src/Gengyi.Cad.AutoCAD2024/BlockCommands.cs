@@ -15,7 +15,7 @@ namespace Gengyi.Cad.AutoCAD2024
     public sealed class BlockCommands
     {
         private static string EquipmentChoice(Session s,string message="绑定设备型号")=>CadGeometry.Keyword(s.Document.Editor,message,
-            "S12 S18 S24 S48 CORNER_R600 LOCKER12 HANGER_CUSTOM CUP100 CHANGING_MIRROR UV_DEVICE SHOE_ARCHIVE SHOE_DESK SHOE_WATERHEATER",
+            "S12 S18 S24 S48 "+Equipment.CornerId+" LOCKER12 HANGER_CUSTOM CUP100 CHANGING_MIRROR UV_DEVICE SHOE_ARCHIVE SHOE_DESK SHOE_WATERHEATER",
             s.Room.Mode==RoomMode.Shoe?"S24":s.Room.Mode==RoomMode.FirstChange?"LOCKER12":"HANGER_CUSTOM");
 
         [CommandMethod("GENGYI","GYBLOCK",CommandFlags.Modal)]
@@ -29,7 +29,14 @@ namespace Gengyi.Cad.AutoCAD2024
             var pick=editor.GetEntity(options);if(pick.Status!=PromptStatus.OK)throw new Cancelled();
             Point3d a=CadGeometry.Point(editor,"点选设备物理原点（标注不参与占地）：");
             Point3d b=CadGeometry.Point(editor,"沿设备长轴点选另一端，已知长度 "+calibrationLength+" mm：",a);
-            Point3d? depthPoint=e.Depth>0 && equipment!="CORNER_R600" && equipment!="HANGER_CUSTOM"?CadGeometry.Point(editor,"点选设备物理深度另一侧（检查实际深度，不使用含文字的 Extents）：",a):(Point3d?)null;
+            double worldMillimeters=s.Document.Database.Insunits!=UnitsValue.Undefined?
+                UnitsConverter.GetConversionFactor(s.Document.Database.Insunits,UnitsValue.Millimeters):
+                s.Room.Boundary?.Frame.MillimetersPerDrawingUnit??CadGeometry.Units(s.Document.Database,editor);
+            if(Math.Abs((b-a).Length*worldMillimeters-calibrationLength)>.5)
+                throw new ArgumentException("所选原块的实际长度 "+((b-a).Length*worldMillimeters).ToString("0.###")+"mm，与当前型号 "+calibrationLength+"mm 不一致；不会通过重新声明尺寸或缩放将旧块冒充新型号。");
+            Point3d? depthPoint=e.Depth>0 && equipment!="HANGER_CUSTOM"?CadGeometry.Point(editor,
+                e.IsCorner?"沿另一径向点选转角实际深度端点，须为650mm：":e.IsShoe?
+                "点选鞋柜深度另一端（含50mm通风道，总深650mm）：":"点选设备物理深度另一侧，须为"+e.Depth+"mm：",a):(Point3d?)null;
             BlockMapping mapping;
             Matrix3d sourceToWorld;
             using(var tx=s.Document.Database.TransactionManager.StartOpenCloseTransaction())
@@ -43,7 +50,9 @@ namespace Gengyi.Cad.AutoCAD2024
                 if(axis.Length<1e-8 || Math.Abs(axis.Z)>1e-7 || Math.Abs(anchor.Z)>1e-6)throw new ArgumentException("长轴标定点须位于设备块的 XY 平面内，且不能重合。");
                 var definition=(BlockTableRecord)tx.GetObject(reference.IsDynamicBlock?reference.DynamicBlockTableRecord:reference.BlockTableRecord,OpenMode.ForRead);
                 if(definition.IsFromExternalReference)throw new ArgumentException("请先使用本地真实块定义；不能将外部参照直接冒充独立设备块。");
-                mapping=new BlockMapping{EquipmentId=equipment,Length=length,BlockName=definition.Name,SourceBlockName=definition.Name,
+                if(e.IsCorner && definition.Name.StartsWith("GY_IMAGE_"+Equipment.LegacyCornerId,StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException("所选块是旧R600重建定义，不能重新声明为R650；请选实际R650原块或明确重建新转角。");
+                mapping=new BlockMapping{EquipmentId=equipment,EquipmentDepthMm=e.Depth,Length=length,BlockName=definition.Name,SourceBlockName=definition.Name,
                     SourceAnchor=new V2(anchor.X,anchor.Y),SourceAngleDegrees=Math.Atan2(axis.Y,axis.X)*180/Math.PI,
                     MillimetersPerSourceUnit=calibrationLength/axis.Length,SourceHash=Blocks.CaptureHash(s.Document.Database,definition.ObjectId),
                     Provenance=definition.Name.StartsWith("GY_IMAGE_",StringComparison.Ordinal)?"image_reconstructed":"original_cad"};
@@ -63,7 +72,10 @@ namespace Gengyi.Cad.AutoCAD2024
                 if(depthPoint.HasValue)
                 {
                     var measured=depthPoint.Value.TransformBy(CadGeometry.SourceToStandard(mapping)*sourceToWorld.Inverse());
-                    if(Math.Abs(Math.Abs(measured.Y)-e.Depth)>.5)throw new ArgumentException("原块实测深度 "+Math.Abs(measured.Y).ToString("0.###")+" mm，与参数 "+e.Depth+" mm 不一致。请核对单位/型号，不能缩放原块伪造一致。");
+                    if(Math.Abs(measured.Z)>.5 || Math.Abs(Math.Abs(measured.Y)-e.Depth)>.5)throw new ArgumentException("原块实测深度 "+Math.Abs(measured.Y).ToString("0.###")+" mm，与参数 "+e.Depth+" mm 不一致。请核对单位/型号，不能缩放原块伪造一致。");
+                    var depthAxis=bx.CrossProduct(by).GetNormal().CrossProduct((b-a).GetNormal()).GetNormal();
+                    double actual=Math.Abs((depthPoint.Value-a).DotProduct(depthAxis))*worldMillimeters;
+                    if(Math.Abs(actual-e.Depth)>.5)throw new ArgumentException("原块当前实际深度 "+actual.ToString("0.###")+"mm，当前型号要求 "+e.Depth+"mm；不会把旧尺寸改标为650mm。");
                 }
             }
             string shape=equipment=="HANGER_CUSTOM"?"Outline":CadGeometry.Keyword(editor,"占地轮廓来源（不使用含文字的整体 Extents）","Outline Nominal",e.Length>0 && e.Depth>0?"Nominal":"Outline");
@@ -74,7 +86,9 @@ namespace Gengyi.Cad.AutoCAD2024
                 using(var tx=s.Document.Database.TransactionManager.StartOpenCloseTransaction())
                 {
                     var pl=(Polyline)tx.GetObject(outline.ObjectId,OpenMode.ForRead);var canonical=CadGeometry.SourceToStandard(mapping)*sourceToWorld.Inverse();
-                    mapping.PhysicalOutline=CadGeometry.PolylinePoints(pl).Select(p=>p.TransformBy(canonical)).Select(p=>new V2(p.X,p.Y)).ToList();
+                    double millimetersPerUnit=Math.Max(Vector3d.XAxis.TransformBy(canonical).Length,
+                        Math.Max(Vector3d.YAxis.TransformBy(canonical).Length,Vector3d.ZAxis.TransformBy(canonical).Length));
+                    mapping.PhysicalOutline=CadGeometry.PolylinePoints(pl,.05/millimetersPerUnit).Select(p=>p.TransformBy(canonical)).Select(p=>new V2(p.X,p.Y)).ToList();
                     Geometry.Polygon(mapping.PhysicalOutline);
                 }
             }
@@ -87,6 +101,7 @@ namespace Gengyi.Cad.AutoCAD2024
             overlay.Closed=true;overlay.ColorIndex=6;overlay.TransformBy(sourceToWorld*CadGeometry.SourceToStandard(mapping).Inverse());
             s.Preview.Clear();s.Preview.Overlay(overlay);
             editor.WriteMessage("\n已保存版本化原块映射，并叠显独立物理轮廓。源状态："+mapping.Provenance+"；图面/实物参数尚待 GYVERIFY 核对。原图和原块未被重画。");
+            if(s.Document.Database.Insunits==UnitsValue.Undefined)editor.WriteMessage("\n图纸单位未设：本次按已确认的每图纸单位 "+worldMillimeters.ToString("0.###")+"mm核对长度和深度，没有修改图纸单位；原块样式与制造条件仍需比对。");
         });
 
         [CommandMethod("GENGYI","GYIMPORT",CommandFlags.Modal)]
@@ -157,6 +172,8 @@ namespace Gengyi.Cad.AutoCAD2024
             double length=equipment=="HANGER_CUSTOM"?CadGeometry.Number(s.Document.Editor,"实际挂架长度 mm：",1000):0;
             string key=BlockMapping.For(equipment,length);
             if(!s.Project.Mappings.TryGetValue(key,out var map))throw new ArgumentException("请先绑定设备原块。");
+            var sample=new Placement{EquipmentId=equipment,Length=length,LocalHooks=map.LocalHooks};
+            if(!map.Accepts(sample))throw new ArgumentException(Blocks.MappingMismatch(sample));
             if(CadGeometry.Keyword(s.Document.Editor,"请在 CAD 中完成原图/原块与实例的同尺度核对：轮廓、列数、圆弧、方向、实际尺寸、物理占地；挂架还须核对实际挂点。已全部核对一致","Yes No","No")!="Yes")throw new Cancelled();
             s.Edit(_=>
             {
@@ -169,7 +186,7 @@ namespace Gengyi.Cad.AutoCAD2024
         public void Add()=>Commands.Run(s=>
         {
             Commands.NeedBoundary(s);string id=EquipmentChoice(s,"手动添加设备（辅助设备容量为0）");
-            bool allowed=s.Room.Mode==RoomMode.Shoe?new[]{"S12","S18","S24","S48","CORNER_R600","CUP100","SHOE_ARCHIVE","SHOE_DESK","SHOE_WATERHEATER"}.Contains(id):
+            bool allowed=s.Room.Mode==RoomMode.Shoe?new[]{"S12","S18","S24","S48",Equipment.CornerId,"CUP100","SHOE_ARCHIVE","SHOE_DESK","SHOE_WATERHEATER"}.Contains(id):
                 s.Room.Mode==RoomMode.FirstChange?id=="LOCKER12":new[]{"HANGER_CUSTOM","CHANGING_MIRROR","UV_DEVICE"}.Contains(id);
             if(!allowed)throw new ArgumentException("该设备不属于当前房间模式。");
             double length=id=="HANGER_CUSTOM"?CadGeometry.Number(s.Document.Editor,"实际挂架总长 mm：",1000):0;

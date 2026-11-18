@@ -37,7 +37,7 @@
         "S18",
         "S24",
         "S48",
-        "CORNER_R600"
+        "CORNER_R650"
       ],
       "optional_auxiliary_equipment_ids": [
         "CUP100",
@@ -79,7 +79,15 @@
         "cabinet_footprint_m2",
         "boundary_area_m2",
         "bypass_status"
-      ]
+      ],
+      "shoe_dimensions": {
+        "depth_mm": 650,
+        "central_duct_mm": 50,
+        "nominal_each_face_mm": 300,
+        "single_height_mm": 600,
+        "stacked_height_mm": 1200,
+        "corner_radius_mm": 650
+      }
     },
     {
       "mode_id": "first_change",
@@ -387,5 +395,11 @@
       "female_second": 125
     }
   ],
-  "interpretation": "这些配置及验收例用于指导首版开发；不是已经实现的 CAD 插件，也不是房间净面积或操作可用性证明。"
+  "interpretation": "这些配置及验收例用于指导首版开发；不是已经实现的 CAD 插件，也不是房间净面积或操作可用性证明。",
+  "supported_boundary_shapes": [
+    "closed_concave_polyline",
+    "sloped_polyline",
+    "arc_polyline",
+    "rectangle"
+  ]
 }

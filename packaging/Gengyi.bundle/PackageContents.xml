@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
-<ApplicationPackage SchemaVersion="1.0" AutodeskProduct="AutoCAD" Name="GENGYI Three-room Layout" AppVersion="0.3.2" Description="AutoCAD 2024 three-room layout plugin; host acceptance pending" ProductCode="{C7F68269-FAB6-46D9-87AF-9CBA33B7A103}" UpgradeCode="{36250D13-C172-4DB8-AAD4-B63B36EF04AF}">
+<ApplicationPackage SchemaVersion="1.0" AutodeskProduct="AutoCAD" Name="GENGYI Three-room Layout" AppVersion="0.4.0" Description="AutoCAD 2024 three-room layout plugin; host acceptance pending" ProductCode="{C7F68269-FAB6-46D9-87AF-9CBA33B7A103}" UpgradeCode="{36250D13-C172-4DB8-AAD4-B63B36EF04AF}">
   <CompanyDetails Name="GENGYI" />
   <Components>
     <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R24.3" SeriesMax="R24.3" />
-    <ComponentEntry AppName="GENGYI" Version="0.3.2" ModuleName="./Contents/Windows/Gengyi.Cad.AutoCAD2024.dll" LoadOnCommandInvocation="True" LoadOnAutoCADStartup="True" LoadOnAppearance="False">
+    <ComponentEntry AppName="GENGYI" Version="0.4.0" ModuleName="./Contents/Windows/Gengyi.Cad.AutoCAD2024.dll" LoadOnCommandInvocation="True" LoadOnAutoCADStartup="True" LoadOnAppearance="False">
       <Commands GroupName="GENGYI">
         <Command Global="GYADD" Local="GYADD" />
         <Command Global="GYBLOCK" Local="GYBLOCK" />
@@ -25,6 +25,7 @@
         <Command Global="GYLOCK" Local="GYLOCK" />
         <Command Global="GYNEWROOM" Local="GYNEWROOM" />
         <Command Global="GYOBSTACLES" Local="GYOBSTACLES" />
+        <Command Global="GYPLAN" Local="GYPLAN" />
         <Command Global="GYPREVIEW" Local="GYPREVIEW" />
         <Command Global="GYREBUILD" Local="GYREBUILD" />
         <Command Global="GYRECT" Local="GYRECT" />

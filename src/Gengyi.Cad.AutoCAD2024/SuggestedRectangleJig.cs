@@ -27,6 +27,7 @@ namespace Gengyi.Cad.AutoCAD2024
         }
         internal Boundary Boundary()=>new Boundary{Width=rotated?estimate.HeightMm:estimate.WidthMm,
             Height=rotated?estimate.WidthMm:estimate.HeightMm,Frame=Serialization.Copy(frame)};
+        internal bool Rotated=>rotated;
         protected override SamplerStatus Sampler(JigPrompts prompts)
         {
             var options=new JigPromptPointOptions("\n移动预览矩形，单击定框 [旋转90度(Rotate)]，Esc取消：");

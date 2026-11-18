@@ -50,12 +50,18 @@ namespace Gengyi.Core
         public string NativeHandle { get; set; } = "";
         public double Width { get; set; }
         public double Height { get; set; }
+        // Null preserves legacy rectangular drawings. Non-null is the actual planning outline.
+        public List<V2>? Outline { get; set; }
+        public double? SourceAreaMm2 { get; set; }
+        public double CurveToleranceMm { get; set; }
+        [JsonIgnore] public double AreaM2 => (SourceAreaMm2 ?? Geometry.RoomPolygon(this).Area)/1000000;
     }
 
     public sealed class Region
     {
         public string NativeHandle { get; set; } = "";
         public List<V2> Points { get; set; } = new List<V2>();
+        public double CurveToleranceMm { get; set; }
     }
 
     public sealed class Population
@@ -116,6 +122,13 @@ namespace Gengyi.Core
 
     public sealed class Equipment
     {
+        public const double ShoeDepthMm = 650;
+        public const double ShoeDuctMm = 50;
+        public const double ShoeSideDepthMm = (ShoeDepthMm-ShoeDuctMm)/2;
+        public const double ShoeHeightMm = 600;
+        public const double CornerRadiusMm = 650;
+        public const string CornerId = "CORNER_R650";
+        public const string LegacyCornerId = "CORNER_R600";
         public string Id { get; set; } = "";
         public double Length { get; set; }
         public double Depth { get; set; }
@@ -125,6 +138,7 @@ namespace Gengyi.Core
         public int Columns { get; set; }
         public int Levels { get; set; }
         public bool IsShoe => Id.StartsWith("S", StringComparison.Ordinal) && Id != "SHOE_DESK" && Id != "SHOE_ARCHIVE" && Id != "SHOE_WATERHEATER";
+        public bool IsCorner => Id == CornerId || Id == LegacyCornerId;
         public static Equipment Get(string id, double length = 0)
         {
             if (id == "S12" || id == "S18" || id == "S24" || id == "S48")
@@ -132,12 +146,14 @@ namespace Gengyi.Core
                 int people = int.Parse(id.Substring(1));
                 int boxes = people == 48 ? 2 : 1;
                 int columns = people / boxes / 3;
-                return new Equipment { Id = id, Length = columns * 250, Depth = 600, Height = 600 * boxes,
+                return new Equipment { Id = id, Length = columns * 250, Depth = ShoeDepthMm, Height = ShoeHeightMm * boxes,
                     Capacity = people, Columns = columns, Levels = 3 * boxes, Boxes = boxes };
             }
             if (id == "LOCKER12") return new Equipment { Id = id, Length = 1140, Depth = 500, Height = 2095, Capacity = 12, Columns = 3, Levels = 4 };
             if (id == "HANGER_CUSTOM") return new Equipment { Id = id, Length = length, Depth = 450, Height = 650, Boxes = 0 };
-            if (id == "CORNER_R600") return new Equipment { Id = id, Length = 600, Depth = 600, Height = 600, Boxes = 0 };
+            if (id == CornerId) return new Equipment { Id = id, Length = CornerRadiusMm, Depth = CornerRadiusMm, Height = ShoeHeightMm, Boxes = 0 };
+            // Keep the legacy radius for reading old drawings; it is never silently enlarged.
+            if (id == LegacyCornerId) return new Equipment { Id = id, Length = 600, Depth = 600, Height = ShoeHeightMm, Boxes = 0 };
             if (id == "CUP100") return new Equipment { Id = id, Length = 1500, Depth = 150, Height = 1800, Boxes = 0 };
             if (id == "CHANGING_MIRROR") return new Equipment { Id = id, Length = 1400, Height = 1600, Boxes = 0 };
             if (id == "UV_DEVICE" || id == "SHOE_ARCHIVE" || id == "SHOE_DESK" || id == "SHOE_WATERHEATER")
@@ -191,15 +207,22 @@ namespace Gengyi.Core
         public double SourceAngleDegrees { get; set; }
         public double MillimetersPerSourceUnit { get; set; } = 1;
         public double Length { get; set; }
+        public double EquipmentDepthMm { get; set; }
         public List<V2>? PhysicalOutline { get; set; }
         public bool FootprintVerified { get; set; }
         public List<V2>? LocalHooks { get; set; }
         public Dictionary<string, object> DynamicValues { get; set; } = new Dictionary<string, object>();
         public Dictionary<string, string> Attributes { get; set; } = new Dictionary<string, string>();
-        public bool Accepts(Placement item) => EquipmentId == item.EquipmentId &&
-            (item.EquipmentId != "HANGER_CUSTOM" || Math.Abs(Length-item.Length) <= .0005 &&
+        public bool Accepts(Placement item)
+        {
+            if(EquipmentId != item.EquipmentId)return false;
+            var equipment=item.Equipment;
+            if(equipment.Id == Equipment.LegacyCornerId)return false;
+            if((equipment.IsShoe || equipment.IsCorner) && !(EquipmentDepthMm>0 && Math.Abs(EquipmentDepthMm-equipment.Depth)<=.0005))return false;
+            return item.EquipmentId != "HANGER_CUSTOM" || Math.Abs(Length-item.Length) <= .0005 &&
                 LocalHooks != null && item.LocalHooks != null && LocalHooks.Count == item.LocalHooks.Count &&
-                !LocalHooks.Where((p,i) => p.Distance(item.LocalHooks[i]) > .001).Any());
+                !LocalHooks.Where((p,i) => p.Distance(item.LocalHooks[i]) > .001).Any();
+        }
         public static string For(string equipmentId, double length) => equipmentId == "HANGER_CUSTOM"
             ? equipmentId + "@" + length.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) : equipmentId;
     }
@@ -253,6 +276,8 @@ namespace Gengyi.Core
     public sealed class Room
     {
         public string Id { get; set; } = "";
+        public string PlanningPreviewSignature { get; set; } = "";
+        public int PlanningPreviewOption { get; set; } = -1;
         public string Name { get; set; } = "";
         public string Gender { get; set; } = "shared";
         public RoomMode Mode { get; set; }
@@ -276,13 +301,19 @@ namespace Gengyi.Core
 
     public sealed class Project
     {
-        public string SchemaVersion { get; set; } = "1.0";
+        public const string CurrentSchemaVersion="2.0";
+        public string SchemaVersion { get; set; } = CurrentSchemaVersion;
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public Population Population { get; set; } = new Population();
         public string CurrentRoomId { get; set; } = "shoe_shared";
         public Dictionary<string, BlockMapping> Mappings { get; set; } = new Dictionary<string, BlockMapping>();
         public List<Room> Rooms { get; set; } = new List<Room>();
         [JsonIgnore] public Room Current => Rooms.Single(r => r.Id == CurrentRoomId);
+        public void UpgradeSchema()
+        {
+            if(SchemaVersion!="1.0" && SchemaVersion!=CurrentSchemaVersion)throw new ArgumentException("不支持的项目数据版本。");
+            SchemaVersion=CurrentSchemaVersion;
+        }
         public static Project Create()
         {
             var p = new Project();

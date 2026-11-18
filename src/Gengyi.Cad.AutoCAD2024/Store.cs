@@ -31,6 +31,7 @@ namespace Gengyi.Cad.AutoCAD2024
         }
         internal static string Pack(Project project)
         {
+            project.UpgradeSchema();
             var raw=Encoding.UTF8.GetBytes(Serialization.Write(project));
             using(var output=new MemoryStream())
             {
@@ -51,8 +52,8 @@ namespace Gengyi.Cad.AutoCAD2024
                     output.Write(buffer,0,read);
                 }
                 var result=Serialization.Read<Project>(Encoding.UTF8.GetString(output.ToArray()));
-                if(result.SchemaVersion!="1.0" || result.Rooms.Count==0 || result.Rooms.Count>100)throw new InvalidDataException("不支持的项目数据版本。");
-                result.Population.Validate();return result;
+                if(result.Rooms.Count==0 || result.Rooms.Count>100)throw new InvalidDataException("项目房间数据无效。");
+                result.UpgradeSchema();result.Population.Validate();return result;
             }
         }
         internal static string? Instance(Entity entity,Transaction transaction)

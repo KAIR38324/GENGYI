@@ -14,7 +14,7 @@ namespace Gengyi.Core
         {
             if(room.Boundary==null || room.DirtySeed==null || room.CleanSeed==null)return new List<V2>();
             double radius=room.Options.WalkWidthMm/2;
-            var blockers=Geometry.Union(items.Select(Geometry.Footprint).Concat(room.Obstacles.Concat(room.Closures).Select(r=>(NetTopologySuite.Geometries.Geometry)Geometry.Polygon(r.Points))));
+            var blockers=Geometry.Union(items.Select(Geometry.Footprint).Concat(room.Obstacles.Concat(room.Closures).Select(Geometry.RegionFootprint)));
             var free=Geometry.RoomPolygon(room.Boundary).Buffer(-radius,32).Difference(blockers.Buffer(radius,32));
             var start=room.DirtySeed;var end=room.CleanSeed;
             bool Clear(V2 a,V2 b)=>free.Covers(Geometry.Factory.CreateLineString(new[]{new Coordinate(a.X,a.Y),new Coordinate(b.X,b.Y)}));

@@ -27,7 +27,7 @@ class CapacityTests(unittest.TestCase):
     def test_600_storage_is_not_room_area(self):
         s = storage_summary(600)
         self.assertEqual((s["placement_groups"], s["total_cells"]), (25, 1200))
-        self.assertEqual(s["cabinet_projection_area_m2"], 30)
+        self.assertEqual(s["cabinet_projection_area_m2"], 32.5)
         self.assertIsNone(s["room_area_m2"])
         self.assertIsNone(s["verified_effective_capacity"])
 
@@ -95,9 +95,9 @@ class ReferenceGeometryTests(unittest.TestCase):
         self.assertEqual(x["nominal_capacity"], 600)
         self.assertEqual(x["placement_groups"], 29)
         self.assertEqual(x["counts"], {"S12": 5, "S18": 6, "S24": 18})
-        self.assertEqual(x["rectangle_mm"], [10700, 10600])
-        self.assertEqual(x["rectangle_envelope_area_m2"], 113.42)
-        self.assertEqual(x["straight_cabinet_projection_m2"], 30)
+        self.assertEqual(x["rectangle_mm"], [10800, 10900])
+        self.assertEqual(x["rectangle_envelope_area_m2"], 117.72)
+        self.assertEqual(x["straight_cabinet_projection_m2"], 32.5)
         self.assertEqual(x["corner_pieces"], 10)
         self.assertFalse(x["is_feasible_layout"])
         self.assertIn("end_closure_and_hygiene_topology", x["missing_validation"])
@@ -105,8 +105,8 @@ class ReferenceGeometryTests(unittest.TestCase):
     def test_documented_612_person_estimate(self):
         x = template_estimate(5, 9000, 1500)
         self.assertEqual(x["nominal_capacity"], 612)
-        self.assertEqual(x["rectangle_mm"], [12200, 11000])
-        self.assertEqual(x["rectangle_envelope_area_m2"], 134.2)
+        self.assertEqual(x["rectangle_mm"], [12300, 11250])
+        self.assertEqual(x["rectangle_envelope_area_m2"], 138.375)
         self.assertFalse(x["is_feasible_layout"])
 
     def test_hanger_endpoints_are_explicit_and_not_doubled(self):

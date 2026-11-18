@@ -17,7 +17,8 @@
       "native_attribute_mapping": {},
       "source_visual_comparison": "not_run",
       "source_cad_geometry_comparison": "not_run",
-      "notes": "本地选择或导入原块；不自动上传用户本地原CAD"
+      "notes": "须按当前650mm占地实测标定；鞋柜含50mm中间风道，旧600/R600块不能直接复用；仅在本地绑定，不上传私有CAD",
+      "equipment_depth_mm": 650
     },
     {
       "equipment_id": "S18",
@@ -34,7 +35,8 @@
       "native_attribute_mapping": {},
       "source_visual_comparison": "not_run",
       "source_cad_geometry_comparison": "not_run",
-      "notes": "本地选择或导入原块；不自动上传用户本地原CAD"
+      "notes": "须按当前650mm占地实测标定；鞋柜含50mm中间风道，旧600/R600块不能直接复用；仅在本地绑定，不上传私有CAD",
+      "equipment_depth_mm": 650
     },
     {
       "equipment_id": "S24",
@@ -51,7 +53,8 @@
       "native_attribute_mapping": {},
       "source_visual_comparison": "not_run",
       "source_cad_geometry_comparison": "not_run",
-      "notes": "本地选择或导入原块；不自动上传用户本地原CAD"
+      "notes": "须按当前650mm占地实测标定；鞋柜含50mm中间风道，旧600/R600块不能直接复用；仅在本地绑定，不上传私有CAD",
+      "equipment_depth_mm": 650
     },
     {
       "equipment_id": "S48",
@@ -68,10 +71,11 @@
       "native_attribute_mapping": {},
       "source_visual_comparison": "not_run",
       "source_cad_geometry_comparison": "not_run",
-      "notes": "本地选择或导入原块；不自动上传用户本地原CAD"
+      "notes": "须按当前650mm占地实测标定；鞋柜含50mm中间风道，旧600/R600块不能直接复用；仅在本地绑定，不上传私有CAD",
+      "equipment_depth_mm": 650
     },
     {
-      "equipment_id": "CORNER_R600",
+      "equipment_id": "CORNER_R650",
       "source_file_local": null,
       "source_file_sha256": null,
       "source_block_name": null,
@@ -85,7 +89,8 @@
       "native_attribute_mapping": {},
       "source_visual_comparison": "not_run",
       "source_cad_geometry_comparison": "not_run",
-      "notes": "本地选择或导入原块；不自动上传用户本地原CAD"
+      "notes": "须按当前650mm占地实测标定；鞋柜含50mm中间风道，旧600/R600块不能直接复用；仅在本地绑定，不上传私有CAD",
+      "equipment_depth_mm": 650
     },
     {
       "equipment_id": "LOCKER12",

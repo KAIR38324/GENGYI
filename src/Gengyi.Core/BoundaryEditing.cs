@@ -6,13 +6,37 @@ namespace Gengyi.Core
 {
     public static class BoundaryEditing
     {
+        public static Boundary FromOutline(IReadOnlyList<V2> points,Frame frame,string nativeHandle="")
+        {
+            ValidateFrame(frame);
+            var polygon=Geometry.Polygon(points);var extent=polygon.EnvelopeInternal;
+            if(extent.Width<1 || extent.Height<1)throw new ArgumentException("房间轮廓外包尺寸须至少1mm。");
+            var result=new Boundary{NativeHandle=nativeHandle,Width=extent.Width,Height=extent.Height,Frame=Serialization.Copy(frame)};
+            result.Frame.Origin=frame.ToWorld(new V2(extent.MinX,extent.MinY));
+            result.Outline=polygon.ExteriorRing.Coordinates.Take(polygon.ExteriorRing.NumPoints-1)
+                .Select(p=>new V2(p.X-extent.MinX,p.Y-extent.MinY)).ToList();
+            return result;
+        }
+
         // A clockwise CAD polyline must not make existing equipment look mirrored.
         public static Boundary AlignOrientation(Boundary boundary, Frame? reference)
         {
             ValidateFrame(boundary.Frame);
-            if(boundary.Width<1 || boundary.Height<1 || !Finite(boundary.Width) || !Finite(boundary.Height))
-                throw new ArgumentException("矩形长宽必须至少 1 mm，且为有效数值。");
-            var copy=Serialization.Copy(boundary);
+            if(boundary.CurveToleranceMm<0 || !Finite(boundary.CurveToleranceMm) || boundary.SourceAreaMm2.HasValue &&
+                (!Finite(boundary.SourceAreaMm2.Value) || boundary.SourceAreaMm2.Value<=Geometry.AreaTolerance))
+                throw new ArgumentException("房间面积或曲线误差标定无效。");
+            Boundary copy;
+            if(boundary.Outline!=null)
+            {
+                copy=FromOutline(boundary.Outline,boundary.Frame,boundary.NativeHandle);
+                copy.SourceAreaMm2=boundary.SourceAreaMm2;copy.CurveToleranceMm=boundary.CurveToleranceMm;
+            }
+            else
+            {
+                if(boundary.Width<1 || boundary.Height<1 || !Finite(boundary.Width) || !Finite(boundary.Height))
+                    throw new ArgumentException("边界外包长宽必须至少 1 mm，且为有效数值。");
+                copy=Serialization.Copy(boundary);
+            }
             if(reference==null)return copy;
             ValidateFrame(reference);
             var normal=Normal(reference);var other=Normal(copy.Frame);
@@ -23,6 +47,7 @@ namespace Gengyi.Core
             {
                 copy.Frame.Origin=copy.Frame.ToWorld(new V2(0,copy.Height));
                 copy.Frame.YAxis=copy.Frame.YAxis.Select(v=>-v).ToArray();
+                if(copy.Outline!=null)copy.Outline=copy.Outline.Select(p=>new V2(p.X,copy.Height-p.Y)).ToList();
             }
             return copy;
         }
