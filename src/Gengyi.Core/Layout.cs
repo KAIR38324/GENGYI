@@ -31,13 +31,18 @@ namespace Gengyi.Core
             bool rectangular=actualBoundary.SymmetricDifference(boxBoundary).Area<=Geometry.AreaTolerance;
             var reserved=RoomAccess.ReservedSpace(room);
             bool hasAccess=room.Doors.Count>0 || room.Passages.Count>0;
-            var candidates = room.Mode==RoomMode.FirstChange?Lockers(room,target,reserved,cancellation):
-                !rectangular?PolygonCandidates(room,target,reserved,cancellation):
-                room.Mode==RoomMode.Shoe?Shoes(room,target):Hangers(room,target);
-            bool translate=rectangular && room.Mode!=RoomMode.FirstChange;
+            bool shoe=room.Mode==RoomMode.Shoe;
+            bool constrainedShoe=shoe && (!rectangular || hasAccess || room.Obstacles.Count>0 || room.Closures.Count>0);
+            var candidates = room.Mode switch
+            {
+                RoomMode.Shoe => constrainedShoe?ShoeChains(room,actualBoundary,reserved,target,cancellation):Shoes(room,target),
+                RoomMode.FirstChange => Lockers(room,target,reserved,cancellation),
+                _ => rectangular?Hangers(room,target):PolygonHangers(room,target,reserved,cancellation)
+            };
+            bool translate=rectangular && room.Mode==RoomMode.SecondChange;
             var drafts=candidates.Select(candidate=>(Candidate:candidate,Translate:translate));
             if(translate && hasAccess)
-                drafts=drafts.Concat(PolygonCandidates(room,target,reserved,cancellation).Select(candidate=>(candidate,false)));
+                drafts=drafts.Concat(PolygonHangers(room,target,reserved,cancellation).Select(candidate=>(candidate,false)));
             var signatures = new HashSet<string>();
             // Geometric enumeration does not mutate the room's placed entities or selected draft.
             var rough = new List<(Candidate Candidate,bool Translate)>();
@@ -52,7 +57,7 @@ namespace Gengyi.Core
                 .ThenBy(d => Math.Abs(d.Candidate.Items.Sum(p => Capacity.Nominal(p, room.Options)) - target))
                 .ThenBy(d => d.Candidate.Items.Count).ToList();
             // Limit precise Boolean geometry work, retaining different families and orientations.
-            var selected = rough.GroupBy(d => d.Candidate.Family).SelectMany(g => g.Take(3)).Take(36).ToList();
+            var selected = rough.GroupBy(d=>d.Candidate.Family).SelectMany(g=>g.Take(3)).Take(36);
             foreach (var draft in selected)
             {
                 var c=draft.Candidate;
@@ -72,13 +77,15 @@ namespace Gengyi.Core
                         c.Statistics.GeometricByInstance.TryGetValue(item.Id,out int usable) && usable==0)>0)
                         c.Statistics=Validation.Evaluate(project,room,c.Items);
                 }
-                if(!RoomAccess.Failed(c.Statistics) && (c.Items.Count>0 || target==0))output.Candidates.Add(c);
+                bool complete=!shoe || target==0 || IsShoeLayout(c.Items) && c.Statistics.Checks["connections"]==CheckState.Pass &&
+                    c.Statistics.Checks["geometry"]==CheckState.Pass && c.Statistics.Checks["boundary"]==CheckState.Pass;
+                if(complete && !RoomAccess.Failed(c.Statistics) && (c.Items.Count>0 || target==0))output.Candidates.Add(c);
             }
             if(hasAccess && output.Candidates.Count==0)
             {
                 var empty=new Candidate{Family="当前无可放设备"};
                 empty.Statistics=Validation.Evaluate(project,room,empty.Items);
-                if(!RoomAccess.Failed(empty.Statistics))output.Candidates.Add(empty);
+                if(!RoomAccess.Failed(empty.Statistics)){if(!shoe)output.Candidates.Add(empty);}
                 else output.Message=empty.Statistics.Issues.First(i=>i.Code.StartsWith("DOOR_",StringComparison.Ordinal) ||
                     i.Code.StartsWith("PASSAGE_",StringComparison.Ordinal)).Message;
             }
@@ -86,13 +93,17 @@ namespace Gengyi.Core
                 .OrderBy(c => c.Statistics.Checks["geometry"] == CheckState.Fail ? 1 : 0)
                 .ThenBy(c => c.Statistics.Checks["boundary"] == CheckState.Fail ? 1 : 0)
                 .ThenBy(c => c.Statistics.ConditionalDeficit)
+                .ThenBy(c => shoe ? Math.Max(0,target-c.Statistics.Nominal) : 0)
                 .ThenBy(c => c.Statistics.Blocked)
                 .ThenBy(c => c.Statistics.NominalSurplus)
                 .ThenBy(c => c.Statistics.ProjectionM2).Take(8).ToList();
-            if(output.Message.Length==0)output.Message = output.Candidates.Count == 0 ? "当前候选家族没有找到可放下的柜链/挂架组合；请检查实际边界、净距与允许柜型。没有穷举任意构型，不能宣称全局无解。" :
-                "得到 " + output.Candidates.Count + " 个不同预排；各项检查独立显示，待核预排不等于有效方案。";
-            if(hasAccess && output.Candidates.Count>0)output.Message+=$" 已避让所选出入口与通行区，最佳方案条件缺口 {output.Candidates.Min(c=>c.Statistics.ConditionalDeficit)}。";
-            if(!rectangular)output.Message+=" 按实际轮廓保守分区排布，缺角和障碍不放柜；不足时显示差额，不把外包矩形当作房间，也不据此认定全局无解。";
+            if(output.Message.Length==0)
+                output.Message=output.Candidates.Count==0
+                    ? shoe?"当前边界、门位和净距下未找到完整 S 形柜链。S 形需要至少三排柜及交替的 R650 圆弧转角。"
+                        :"当前边界和净距下未找到可布置的设备，请核对房间与参数。"
+                    : "得到 "+output.Candidates.Count+(shoe && target>0?" 个带 R650 圆弧转角的 S 形预排。":" 个不同预排。");
+            if(hasAccess && output.Candidates.Count>0)
+                output.Message+=$" 已避让所选出入口与通行区，首选方案的条件缺口为 {output.Candidates[0].Statistics.ConditionalDeficit}。";
             if (output.TimedOut) output.Message += " 搜索达到时间预算，未完成穷举，不能据此认定最优或无解。";
             return output;
         }
@@ -166,7 +177,7 @@ namespace Gengyi.Core
 
         // Shared by pre-boundary area planning and the actual rectangle solver.
         // R650 is the current quarter-sector assumption, not an original block.
-        internal static Candidate ShoeTemplate(Room room, int rows, double run, int connector, List<int> chain, int stackedTarget = 0)
+        internal static Candidate ShoeTemplate(Room room, int rows, double run, int connector, List<int> chain, int stackedTarget = 0, bool firstTurnRight = true)
         {
             var c = new Candidate { Family = $"S形{rows}排/{connector}连接" };
             double margin = room.Options.ShoeBoundaryMm;
@@ -179,7 +190,7 @@ namespace Gengyi.Core
                     x += cap / 3 * 250;
                 }
                 if (row == rows - 1) continue;
-                bool right = row % 2 == 0;
+                bool right = (row % 2 == 0) == firstTurnRight;
                 double cx = right ? margin + Equipment.CornerRadiusMm + run : margin + Equipment.CornerRadiusMm;
                 c.Items.Add(Place(room, Equipment.CornerId, cx, y + Equipment.ShoeDepthMm, right ? 270 : 180, group: c.Id));
                 c.Items.Add(Place(room, "S" + (connector * 12 / 1000), right ? cx + Equipment.CornerRadiusMm : cx, y + Equipment.ShoeDepthMm, 90, group: c.Id));

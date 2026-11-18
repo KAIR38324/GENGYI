@@ -9,98 +9,36 @@ namespace Gengyi.Core
 {
     public static partial class Layout
     {
-        private static IEnumerable<Candidate> PolygonCandidates(Room room,int target,Geo reserved,CancellationToken cancellation)
+        private static IEnumerable<Candidate> PolygonHangers(Room room,int target,Geo reserved,CancellationToken cancellation)
         {
             if(target==0){yield return new Candidate{Family="不规则空房间"};yield break;}
             var boundary=room.Boundary!;
             double aisle=room.Options.PlanningAisleFor(room.Mode);
-            Geo actualRoom=Geometry.RoomPolygon(boundary),usable=actualRoom;
-            if(room.Mode==RoomMode.Shoe)usable=usable.Buffer(-room.Options.ShoeBoundaryMm,16);
+            Geo actualRoom=Geometry.RoomPolygon(boundary);
             var fixedObjects=Geometry.Union(room.Obstacles.Concat(room.Closures).Select(Geometry.RegionFootprint));
-            if(!fixedObjects.IsEmpty)usable=usable.Difference(fixedObjects);
-            if(!reserved.IsEmpty)usable=usable.Difference(reserved);
+            var usable=actualRoom.Difference(fixedObjects.Union(reserved));
             foreach(bool vertical in new[]{false,true})
             {
-                cancellation.ThrowIfCancellationRequested();
                 var transform=new AffineTransformation(0,1,0,-1,0,boundary.Width);
                 var oriented=vertical?transform.Transform(usable):usable;
                 var actualOriented=vertical?transform.Transform(actualRoom):actualRoom;
-                var spaces=BoundarySpaces.Partition(oriented,cancellation,actualOriented,room.Mode==RoomMode.Shoe?room.Options.ShoeBoundaryMm:0);
-                foreach(bool alternative in new[]{false,true})
-                    foreach(bool stacking in room.Mode==RoomMode.Shoe && room.Options.AllowStacking?new[]{false,true}:new[]{false})
+                var spaces=BoundarySpaces.Partition(oriented,cancellation,actualOriented);
+                foreach(bool edges in new[]{false,true})
+                {
+                    var candidate=new Candidate{Family="分区/"+(edges?"边列挂架":"中排挂架")+"/"+(vertical?"竖向":"横向")};
+                    int remaining=target;
+                    foreach(var space in spaces)
                     {
-                        var c=new Candidate{Family="分区/"+(room.Mode==RoomMode.Shoe?(alternative?"直段低柜":"S柜链"):(alternative?"边列挂架":"中排挂架"))+
-                            "/"+(vertical?"竖向":"横向")+(stacking?"/24—48—24":"")};
-                        int remaining=target;
-                        foreach(var space in spaces)
-                        {
-                            cancellation.ThrowIfCancellationRequested();
-                            if(remaining<=0)break;
-                            List<Placement> items;
-                            if(room.Mode==RoomMode.Shoe)items=ShoesInSpace(room,space,remaining,stacking,alternative,aisle,cancellation);
-                            else items=HangersInSpace(room,space,remaining,alternative,aisle);
-                            foreach(var item in items)
-                            {
-                                if(vertical){item.Position=new V2(boundary.Width-item.Position.Y,item.Position.X);item.Rotation=Geometry.Normalize(item.Rotation+90);}
-                                c.Items.Add(item);
-                            }
-                            remaining-=items.Sum(p=>Capacity.Nominal(p,room.Options));
-                        }
-                        if(room.Mode==RoomMode.Shoe)
-                        {
-                            bool corners=c.Items.Any(p=>p.Equipment.IsCorner);
-                            bool lines=c.Items.GroupBy(p=>p.GroupId).Any(g=>!g.Any(p=>p.Equipment.IsCorner));
-                            if(!corners)c.Family=c.Family.Replace("S柜链","直段低柜");
-                            else if(lines)c.Family=c.Family.Replace("S柜链","S组+直段");
-                            if(!c.Items.Any(p=>p.EquipmentId=="S48"))c.Family=c.Family.Replace("/24—48—24","");
-                        }
-                        if(c.Items.Count>0)yield return c;
+                        cancellation.ThrowIfCancellationRequested();
+                        if(remaining<=0)break;
+                        var items=HangersInSpace(room,space,remaining,edges,aisle);
+                        candidate.Items.AddRange(items);
+                        remaining-=items.Sum(p=>Capacity.Nominal(p,room.Options));
                     }
-            }
-        }
-
-        private static List<Placement> ShoesInSpace(Room room,BoundarySpace space,int target,bool stacking,bool straight,double aisle,CancellationToken cancellation)
-        {
-            var local=PlanningRoom(room,space.Width,space.Height);
-            local.Options.ShoeBoundaryMm=0;local.Options.AllowStacking=stacking;
-            var choices=new List<Candidate>();
-            if(!straight)
-                foreach(var candidate in Shoes(local,target))
-                {
-                    cancellation.ThrowIfCancellationRequested();
-                    choices.Add(candidate);
+                    if(vertical)RotateIntoBoundary(candidate,boundary.Width);
+                    if(candidate.Items.Count>0)yield return candidate;
                 }
-            // Narrow parts of an L/U room can still contain real connected low-cabinet
-            // runs. They are separate groups, never a cropped or falsely connected S chain.
-            foreach(bool rotated in new[]{false,true})
-            {
-                double w=rotated?space.Height:space.Width,h=rotated?space.Width:space.Height;
-                double maxRun=Math.Floor(w/500)*500;
-                if(maxRun<1000 || h<Equipment.ShoeDepthMm)continue;
-                int rows=Math.Min(40,1+(int)Math.Floor((h-Equipment.ShoeDepthMm)/(Equipment.ShoeDepthMm+aisle)));
-                var line=new Candidate{Family="分区直段"};int remaining=target;
-                for(int row=0;row<rows && remaining>0;row++)
-                {
-                    double desired=Math.Min(maxRun,Math.Max(1000,Math.Ceiling(remaining/.012/500)*500));
-                    List<int>? chain=null;
-                    for(double run=desired;run<=maxRun && chain==null;run+=500)chain=Capacity.Run(run,room.Options.ShoeCapacities);
-                    for(double run=maxRun;run>=1000 && chain==null;run-=500)chain=Capacity.Run(run,room.Options.ShoeCapacities);
-                    if(chain==null)continue;
-                    string group=Guid.NewGuid().ToString("N");double x=0,y=row*(Equipment.ShoeDepthMm+aisle);
-                    foreach(int cap in chain){line.Items.Add(Place(room,"S"+cap,x,y,group:group));x+=cap/3*250;}
-                    if(stacking)ShoeStacking.StackToTarget(line.Items,target);
-                    remaining=target-line.Items.Sum(p=>p.Equipment.Capacity);
-                }
-                if(rotated)RotateIntoBoundary(line,space.Width);
-                if(line.Items.Count>0)choices.Add(line);
             }
-            var selected=choices.OrderBy(c=>Math.Max(0,target-c.Items.Sum(p=>p.Equipment.Capacity)))
-                .ThenBy(c=>!straight && c.Family.StartsWith("S形",StringComparison.Ordinal)?0:1)
-                .ThenBy(c=>Math.Max(0,c.Items.Sum(p=>p.Equipment.Capacity)-target))
-                .ThenBy(c=>c.Items.Count).FirstOrDefault();
-            if(selected==null)return new List<Placement>();
-            foreach(var item in selected.Items)item.Position+=new V2(space.X,space.Y);
-            return selected.Items;
         }
 
         private static List<Placement> HangersInSpace(Room room,BoundarySpace space,int target,bool edges,double aisle)
@@ -130,9 +68,6 @@ namespace Gengyi.Core
             }
             return choices.OrderByDescending(c=>c.Sum(p=>Capacity.Nominal(p,o))).First();
         }
-
-        private static Room PlanningRoom(Room room,double width,double height)=>new Room{Id=room.Id,Mode=room.Mode,
-            Boundary=new Boundary{Width=width,Height=height},Options=Serialization.Copy(room.Options)};
 
         private static void PositionInSpace(List<Placement> items,BoundarySpace space,bool rotated)
         {

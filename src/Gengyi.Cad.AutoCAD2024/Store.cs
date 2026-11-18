@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using Autodesk.AutoCAD.DatabaseServices;
 using Gengyi.Core;
+using Layout=Gengyi.Core.Layout;
 
 namespace Gengyi.Cad.AutoCAD2024
 {
@@ -53,7 +54,17 @@ namespace Gengyi.Cad.AutoCAD2024
                 }
                 var result=Serialization.Read<Project>(Encoding.UTF8.GetString(output.ToArray()));
                 if(result.Rooms.Count==0 || result.Rooms.Count>100)throw new InvalidDataException("项目房间数据无效。");
-                result.UpgradeSchema();result.Population.Validate();return result;
+                result.UpgradeSchema();result.Population.Validate();
+                foreach(var room in result.Rooms.Where(room=>room.Mode==RoomMode.Shoe && room.Candidates.Count>0))
+                {
+                    string selected=room.Candidates[Math.Max(0,Math.Min(room.SelectedCandidate,room.Candidates.Count-1))].Id;
+                    int target=result.Population.For(room);
+                    if(room.Candidates.RemoveAll(candidate=>candidate.Items.Count==0?target!=0:!Layout.IsShoeLayout(candidate.Items))==0)continue;
+                    room.SelectedCandidate=Math.Max(0,room.Candidates.FindIndex(candidate=>candidate.Id==selected));
+                    room.PreviewVisible=room.PreviewVisible && room.Candidates.Count>0;
+                    room.Stale|=room.Candidates.Count==0;
+                }
+                return result;
             }
         }
         internal static string? Instance(Entity entity,Transaction transaction)

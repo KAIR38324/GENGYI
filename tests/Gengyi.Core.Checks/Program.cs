@@ -174,6 +174,49 @@ static class Program
             "switching shifts invalidates candidates while retaining the original drawing inputs");
     }
 
+    static void ShoeShapeWithDoorsChecks()
+    {
+        var project=Project.Create();
+        project.ChangePopulation(new Population{ShiftCount=1,PeoplePerShift=300});
+        var room=project.Current;
+        room.Options.AllowStacking=false;
+        room.Boundary=BoundaryEditing.FromOutline(new[]{new V2(0,0),new V2(30000,0),new V2(30000,3500),
+            new V2(7500,3500),new V2(7500,9000),new V2(0,9000)},new Frame());
+        room.Doors.Add(new DoorOpening{Start=new V2(1700,0),End=new V2(2600,0),Side=DoorSide.Dirty});
+        room.Doors.Add(new DoorOpening{Start=new V2(1700,9000),End=new V2(2600,9000),Side=DoorSide.Clean});
+
+        bool Complete(Candidate c)=>Layout.IsShoeLayout(c.Items) && c.Items.GroupBy(p=>p.GroupId).Count()==1 &&
+            c.Statistics.Corners>=4 && c.Statistics.Checks["connections"]==CheckState.Pass &&
+            c.Statistics.Checks["geometry"]==CheckState.Pass && c.Statistics.Checks["boundary"]==CheckState.Pass &&
+            c.Statistics.Checks[RoomAccess.EntryCheck]==CheckState.Pass && !RoomAccess.Failed(c.Statistics) &&
+            c.Items.All(p=>p.ScaleX==1 && p.ScaleY==1 && p.EquipmentId!="S48");
+        var atDoors=Layout.Generate(project,room);
+        Assert(atDoors.Candidates.Count>0 && atDoors.Candidates.All(Complete),
+            "a wide branch with two doors yields only connected S chains with alternating R650 turns even when a long wing dominates the floor area");
+        Assert(atDoors.Candidates.All(c=>c.Statistics.Checks["hygiene_without_crossing"]==CheckState.Fail && c.Statistics.Effective==null),
+            "geometrically fitting a serpentine chain does not certify dirty/clean isolation when both doors can walk around it");
+
+        var mixed=Serialization.Copy(atDoors.Candidates[0].Items);
+        mixed.Add(new Placement{RoomId=room.Id,EquipmentId="S24",GroupId="straight-run",Position=new V2(15000,1400)});
+        Assert(!Layout.IsShoeLayout(mixed) && !Layout.IsShoeLayout(mixed.Where(p=>p.GroupId=="straight-run")),
+            "old straight and mixed S/straight drafts are no longer accepted as an S-shaped layout");
+
+        room.Boundary=BoundaryEditing.FromOutline(new[]{new V2(0,0),new V2(6600,0),new V2(6600,4200),
+            new V2(6370,4200),new V2(6370,5950),new V2(0,5950)},new Frame());
+        room.Doors.Clear();
+        room.Doors.Add(new DoorOpening{Start=new V2(0,1700),End=new V2(0,2600),Side=DoorSide.Dirty});
+        room.Doors.Add(new DoorOpening{Start=new V2(1600,5950),End=new V2(2500,5950),Side=DoorSide.Clean});
+        room.Passages.Add(new Region{Points=Geometry.Rect(0,1700,4000,900)});
+        var passage=Geometry.RegionFootprint(room.Passages[0]);
+        var constrained=Layout.Generate(project,room);
+        Assert(constrained.Candidates.Count>0 && constrained.Candidates.All(Complete) &&
+            constrained.Candidates.Any(c=>c.Family.Contains("横向") && c.Statistics.Nominal<project.Population.For(room) &&
+                c.Items.All(p=>Geometry.Footprint(p).Intersection(passage).Area<=Geometry.AreaTolerance) &&
+                Geometry.Factory.ToGeometry(Geometry.Union(c.Items.Select(Geometry.Footprint)).EnvelopeInternal)
+                    .Intersection(passage).Area>Geometry.AreaTolerance),
+            "the real cabinet and corner footprints fit around a reserved aisle that cuts through the S chain's enclosing rectangle");
+    }
+
     static void IrregularBoundaryAndWorkflowChecks()
     {
         var outline=LOutline();var boundary=BoundaryEditing.FromOutline(outline,new Frame(),"USER-L");
@@ -258,7 +301,8 @@ static class Program
         }
         project=Project.Create();r=project.Rooms[0];r.Boundary=BoundaryEditing.FromOutline(new[]{new V2(0,0),new V2(7000,0),new V2(7000,3000),new V2(3000,3000),new V2(3000,7000),new V2(0,7000)},new Frame());
         var small=Layout.Generate(project,r);
-        Assert(small.Candidates.Count>0 && small.Candidates.All(c=>c.Statistics.GeometricAvailable<600 && c.Statistics.ConditionalDeficit>0 && c.Items.All(i=>i.ScaleX==1 && i.ScaleY==1)),"undersized irregular rooms report real deficits without shrinking equipment or pretending the envelope fits");
+        Assert(small.Candidates.Count==0 && small.Message.Contains("完整 S 形"),
+            "an undersized irregular room reports that no complete S shape fits without offering long straight runs");
         var cancelled=new System.Threading.CancellationTokenSource();cancelled.Cancel();string state=Serialization.Write(project);bool stopped=false;
         try{Layout.Generate(project,r,cancelled.Token);}catch(OperationCanceledException){stopped=true;}
         Assert(stopped && state==Serialization.Write(project),"cancelled irregular-room generation leaves every saved field untouched");
@@ -410,6 +454,7 @@ static class Program
         UpdatedDimensionsChecks();
         LockerAisleChecks();
         RoomAccessChecks();
+        ShoeShapeWithDoorsChecks();
         IrregularBoundaryAndWorkflowChecks();
         ShoeStackingChecks();
         BoundaryEditingChecks();

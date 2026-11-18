@@ -508,7 +508,14 @@ namespace Gengyi.Cad.AutoCAD2024
                     candidateCanCommit=selected.Items.Count>0 && missing==0 && !badGeometry && !badBoundary && !badStacking && !badLockerAisle && !badAccess;
                     tips.SetToolTip(commit,badStacking?"每个48人柜两端必须是相接的24人单柜，先修正交错布置。":badLockerAisle?"一更两侧衣柜之间需留至少1100 mm净空。":missing>0?"先接入设备图块，才能确认入图。":badGeometry || badBoundary?"先修正碰撞、尺寸或边距问题。":"待核条件会在入图时要求明确作为草案确认。");
                 }
-                else{candidateCanCommit=false;candidateDetail.Text="尚无方案。预览并选择实际边界后，点击“生成布置方案”。";sourceInfo.Visible=false;rebuild.Visible=bind.Visible=false;}
+                else
+                {
+                    candidateCanCommit=false;
+                    candidateDetail.Text=s.Room.Mode==RoomMode.Shoe && boundary!=null && !s.Room.Stale
+                        ?"未找到完整 S 形方案。请核对房间边界、门位和柜间净距。"
+                        :"尚无方案。选择实际边界后，点击“生成布置方案”。";
+                    sourceInfo.Visible=false;rebuild.Visible=bind.Visible=false;
+                }
                 var stats=s.Room.PreviewVisible && selected!=null?selected.Statistics:s.Room.Statistics;
                 SetStatistics(stats,s.Room.PreviewVisible?"所选方案预览":"已入图设备");
                 RefreshEstimate();

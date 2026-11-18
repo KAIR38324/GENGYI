@@ -266,12 +266,16 @@ namespace Gengyi.Cad.AutoCAD2024
             if(s.Room.Placed.Any(p=>p.Locked))throw new ArgumentException("当前房间含锁定设备，请先解锁后替换方案。");
             string action=s.Room.Placed.Count==0?"Replace":CadGeometry.Keyword(s.Document.Editor,"当前房间已有设备","Replace Append Cancel","Replace");
             if(action=="Cancel")throw new Cancelled();
+            var finalItems=chosen.Items;
             if(action=="Append")
             {
-                var combined=s.Room.Placed.Concat(chosen.Items).ToList();
-                ShoeStacking.RequireValid(combined);LockerAisles.RequireValid(s.Room,combined);
-                chosen.Statistics=Validation.Evaluate(s.Project,s.Room,combined);
+                finalItems=s.Room.Placed.Concat(chosen.Items).ToList();
+                ShoeStacking.RequireValid(finalItems);LockerAisles.RequireValid(s.Room,finalItems);
+                chosen.Statistics=Validation.Evaluate(s.Project,s.Room,finalItems);
             }
+            if(s.Room.Mode==RoomMode.Shoe && finalItems.Count>0 &&
+                (!Layout.IsShoeLayout(finalItems) || chosen.Statistics.Checks["connections"]==CheckState.Fail))
+                throw new ArgumentException("换鞋间入图须使用完整相接的 S 形鞋柜及交替的 R650 转角。请重新生成或恢复柜链。");
             RoomAccess.RequireValid(chosen.Statistics);
             if(chosen.Statistics.Checks["geometry"]==CheckState.Fail || chosen.Statistics.Checks["boundary"]==CheckState.Fail)
                 throw new ArgumentException("存在实体碰撞、越界或边界净距问题，请调整后再入图。");

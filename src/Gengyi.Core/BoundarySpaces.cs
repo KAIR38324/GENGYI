@@ -18,7 +18,7 @@ namespace Gengyi.Core
     {
         // Cells are accepted only when the complete rectangle is covered by the true
         // usable polygon. The grid never substitutes a bounding box for the boundary.
-        internal static List<BoundarySpace> Partition(Geo usable,CancellationToken cancellation,Geo? actualRoom=null,double boundaryClearance=0)
+        internal static List<BoundarySpace> Partition(Geo usable,CancellationToken cancellation,Geo actualRoom)
         {
             var result=new List<BoundarySpace>();
             if(usable.IsEmpty || usable.Area<=Geometry.AreaTolerance)return result;
@@ -28,10 +28,8 @@ namespace Gengyi.Core
             if(xs.Count<2 || ys.Count<2)return result;
             int width=xs.Count-1,height=ys.Count-1;
             var cells=new bool[height,width];var prepared=PreparedGeometryFactory.Prepare(usable.Buffer(.000001,1));
-            var actual=actualRoom==null?null:PreparedGeometryFactory.Prepare(actualRoom);
-            var wall=actualRoom?.Boundary;
-            bool Covered(Geo shape)=>prepared.Covers(shape) && (actual==null || actual.Covers(shape)) &&
-                (wall==null || boundaryClearance<=0 || shape.Distance(wall)+.000001>=boundaryClearance);
+            var actual=PreparedGeometryFactory.Prepare(actualRoom);
+            bool Covered(Geo shape)=>prepared.Covers(shape) && actual.Covers(shape);
             for(int y=0;y<height;y++)for(int x=0;x<width;x++)
             {
                 cancellation.ThrowIfCancellationRequested();
