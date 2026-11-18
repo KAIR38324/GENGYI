@@ -267,7 +267,9 @@ namespace Gengyi.Core
                                 if (a && b && (!seeds || isolation && (dirtyAreas.Contains(ca) && cleanAreas.Contains(cb) ||
                                     cleanAreas.Contains(ca) && dirtyAreas.Contains(cb)))) usable += e.Levels;
                             }
-                            else if (a && (!hasEntries || Approach(item,x,width,false,depth,room.Options.WalkWidthMm,walking).Overlaps(dirtyWalks)))
+                            else if (a && (!hasEntries || Approach(item,x,width,false,
+                                e.Id=="LOCKER12"?Math.Max(depth,room.Options.WalkWidthMm/2+1):depth,
+                                room.Options.WalkWidthMm,walking).Overlaps(dirtyWalks)))
                             {usable+=e.Levels;reachableFront=true;}
                         }
                     }

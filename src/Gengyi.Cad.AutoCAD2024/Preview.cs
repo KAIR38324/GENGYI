@@ -19,11 +19,11 @@ namespace Gengyi.Cad.AutoCAD2024
         internal string PlanningSignature{get;private set;}="";
         internal string PlanningRoomId{get;private set;}="";
         internal bool HasGraphics=>entities.Count>0;
-        internal void Overlay(Entity entity)
+        internal void Overlay(Entity entity,TransientDrawingMode mode=TransientDrawingMode.DirectTopmost)
         {
             try
             {
-                if(!TransientManager.CurrentTransientManager.AddTransient(entity,TransientDrawingMode.DirectShortTerm,128,new IntegerCollection()))
+                if(!TransientManager.CurrentTransientManager.AddTransient(entity,mode,128,new IntegerCollection()))
                     throw new InvalidOperationException("AutoCAD 无法注册临时图形。");
                 entities.Add(entity);
             }
@@ -41,6 +41,7 @@ namespace Gengyi.Cad.AutoCAD2024
             if(boundary==null)return;
             try
             {
+                var database=session.Document.Database;
                 ShowItems(session,room,items);
                 foreach(var door in room.Doors)
                 {
@@ -48,26 +49,35 @@ namespace Gengyi.Cad.AutoCAD2024
                     try{zone=RoomAccess.Landing(boundary,door,room.Options.WalkWidthMm);}
                     catch(ArgumentException){continue;} // Statistics report unusable doors.
                     short color=door.Side==DoorSide.Clean?(short)3:(short)4;
-                    Overlay(CadGeometry.Polyline(zone,boundary.Frame,color));
-                    var opening=CadGeometry.Polyline(new[]{door.Start,door.End},boundary.Frame,color);
+                    Overlay(CadGeometry.PreviewPolyline(database,zone,boundary.Frame,color));
+                    var opening=CadGeometry.PreviewPolyline(database,new[]{door.Start,door.End},boundary.Frame,color);
                     opening.Closed=false;Overlay(opening);
                 }
                 foreach(var region in room.Passages.Where(r=>r.Points.Count>=3))
-                    Overlay(CadGeometry.Polyline(region.Points,boundary.Frame,6));
+                    Overlay(CadGeometry.PreviewPolyline(database,region.Points,boundary.Frame,6));
             }
             catch{Clear();throw;}
         }
         private void ShowItems(Session session,Room room,IEnumerable<Placement> items)
         {
-            using(var transaction=session.Document.Database.TransactionManager.StartOpenCloseTransaction())
+            var database=session.Document.Database;
+            using(var transaction=database.TransactionManager.StartOpenCloseTransaction())
             {
                 foreach(var item in items)
                 {
-                    Entity entity;
-                    try{entity=Blocks.Create(session.Document.Database,transaction,room,item,Blocks.Mapping(session,item),false);}
-                    catch(ArgumentException){entity=CadGeometry.Polyline(Gengyi.Core.Geometry.Outline(item),room.Boundary!.Frame,1);}
-                    Overlay(entity);
-                    foreach(var text in Blocks.Labels(session.Document.Database,room,item))Overlay(text);
+                    // A source block can draw nothing in this viewport even when its reference is valid.
+                    // Draw the measured footprint independently, above any available block detail.
+                    short color=3;
+                    try
+                    {
+                        var source=Blocks.Create(database,transaction,room,item,Blocks.Mapping(session,item),false);
+                        Overlay(source,TransientDrawingMode.DirectShortTerm);
+                    }
+                    catch(ArgumentException){color=1;}
+                    catch(Autodesk.AutoCAD.Runtime.Exception){color=1;}
+                    catch(InvalidOperationException){color=1;}
+                    Overlay(CadGeometry.PreviewPolyline(database,Gengyi.Core.Geometry.Outline(item),room.Boundary!.Frame,color));
+                    foreach(var text in Blocks.Labels(database,room,item))Overlay(text);
                 }
                 transaction.Commit();
             }
@@ -85,7 +95,7 @@ namespace Gengyi.Cad.AutoCAD2024
                     Gengyi.Core.Layout.ResolveMapping(session.Project,item);return item;
                 }).ToList();
                 ShowItems(session,room,items);
-                Overlay(CadGeometry.Polyline(Gengyi.Core.Geometry.RoomOutline(boundary),boundary.Frame,3));
+                Overlay(CadGeometry.PreviewPolyline(session.Document.Database,Gengyi.Core.Geometry.RoomOutline(boundary),boundary.Frame,3));
                 double height=Math.Max(120,Math.Min(boundary.Width,boundary.Height)/45);
                 var text=new DBText();text.SetDatabaseDefaults(session.Document.Database);text.ColorIndex=3;
                 text.TextString=$"人数预排参考 · {boundary.Width/1000:0.##}×{boundary.Height/1000:0.##}m · {boundary.AreaM2:0.##}㎡ · 非实际房间边界";
@@ -148,7 +158,7 @@ namespace Gengyi.Cad.AutoCAD2024
             foreach(var original in items)
             {
                 var item=Serialization.Copy(original);item.Position+=delta;
-                var line=CadGeometry.Polyline(Gengyi.Core.Geometry.Outline(item),session.Room.Boundary!.Frame,3);
+                var line=CadGeometry.PreviewPolyline(session.Document.Database,Gengyi.Core.Geometry.Outline(item),session.Room.Boundary!.Frame,3);
                 lines.Add(line);draw.Geometry.Draw(line);
                 foreach(var text in Blocks.Labels(session.Document.Database,session.Room,item))
                 {lines.Add(text);draw.Geometry.Draw(text);}

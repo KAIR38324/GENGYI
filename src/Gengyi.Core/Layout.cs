@@ -18,25 +18,35 @@ namespace Gengyi.Core
     public static partial class Layout
     {
         public static SearchResult Generate(Project project, Room room, CancellationToken cancellation = default)
+            => Generate(project,room,false,cancellation);
+
+        public static SearchResult SupplementLockers(Project project,Room room,CancellationToken cancellation = default)
+        {
+            if(room.Mode!=RoomMode.FirstChange)throw new ArgumentException("自动补排仅支持一更房间。");
+            return Generate(project,room,true,cancellation);
+        }
+
+        private static SearchResult Generate(Project project,Room room,bool supplement,CancellationToken cancellation)
         {
             project.Population.Validate(); room.Options.Validate();
             if (room.Boundary == null) throw new ArgumentException("请先为当前房间选择边界。");
             if (room.ConstraintIssue.Length > 0) throw new ArgumentException(room.ConstraintIssue);
             if (room.Boundary.Width <= 0 || room.Boundary.Height <= 0) throw new ArgumentException("房间边界面积必须为正。");
+            cancellation.ThrowIfCancellationRequested();
+            var reserved=RoomAccess.ReservedSpace(room);
+            int target=project.Population.For(room);
+            if(room.Mode==RoomMode.FirstChange)return SearchLockers(project,room,target,reserved,supplement,cancellation);
             var output = new SearchResult();
             var clock = Stopwatch.StartNew();
-            int target = project.Population.For(room);
             var actualBoundary=Geometry.RoomPolygon(room.Boundary);
             var boxBoundary=Geometry.Polygon(Geometry.Rect(0,0,room.Boundary.Width,room.Boundary.Height));
             bool rectangular=actualBoundary.SymmetricDifference(boxBoundary).Area<=Geometry.AreaTolerance;
-            var reserved=RoomAccess.ReservedSpace(room);
             bool hasAccess=room.Doors.Count>0 || room.Passages.Count>0;
             bool shoe=room.Mode==RoomMode.Shoe;
             bool constrainedShoe=shoe && (!rectangular || hasAccess || room.Obstacles.Count>0 || room.Closures.Count>0);
             var candidates = room.Mode switch
             {
                 RoomMode.Shoe => constrainedShoe?ShoeChains(room,actualBoundary,reserved,target,cancellation):Shoes(room,target),
-                RoomMode.FirstChange => Lockers(room,target,reserved,cancellation),
                 _ => rectangular?Hangers(room,target):PolygonHangers(room,target,reserved,cancellation)
             };
             bool translate=rectangular && room.Mode==RoomMode.SecondChange;

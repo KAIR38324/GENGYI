@@ -10,6 +10,12 @@ namespace Gengyi.Core
         public const double MinimumMm=1100;
         public const string CheckKey="locker_aisle";
 
+        internal static Geo Front(Placement item,double depth) =>
+            Geometry.Polygon(Geometry.Rect(.1,-depth,item.Equipment.Length-.2,depth-.1).Select(item.Transform));
+
+        public static bool PreservesCapacity(Statistics before,Statistics after) =>
+            before.GeometricByInstance.All(pair=>after.GeometricByInstance.TryGetValue(pair.Key,out int usable) && usable>=pair.Value);
+
         // A shared aisle may serve both fronts. Back-to-back and side-by-side
         // cabinet contacts are not aisles and do not require a rear/side gap.
         private static List<(Placement A,Placement B,double Gap)> Pairs(Room room,IReadOnlyList<Placement> items)
@@ -20,8 +26,7 @@ namespace Gengyi.Core
             foreach(var item in items.Where(p=>p.EquipmentId=="LOCKER12"))
                 try
                 {
-                    lockers.Add((item,Geometry.Footprint(item),
-                        Geometry.Polygon(Geometry.Rect(.1,-MinimumMm,item.Equipment.Length-.2,MinimumMm-.1).Select(item.Transform))));
+                    lockers.Add((item,Geometry.Footprint(item),Front(item,MinimumMm)));
                 }
                 catch(ArgumentException){ /* Geometry validation reports malformed source outlines/transforms. */ }
             for(int i=0;i<lockers.Count;i++)

@@ -94,6 +94,62 @@ static class Program
         Assert(generated.Candidates.Count>1 && generated.Candidates.All(c=>c.Statistics.Checks[LockerAisles.CheckKey]==CheckState.Pass) && generated.Candidates.Any(c=>c.Statistics.GeometricAvailable>=300),
             "irregular first-change layouts preserve the cabinet aisle minimum across real room partitions");
     }
+    static void LockerSearchChecks()
+    {
+        var project=Project.Create();
+        var offset=Make(RoomMode.FirstChange,4500,2900);
+        offset.CustomPeople=32;
+        offset.Obstacles.Add(new Region{Points=Geometry.Rect(0,0,4500,700)});
+        offset.Obstacles.Add(new Region{Points=Geometry.Rect(0,2800,4500,100)});
+        var plans=Layout.Generate(project,offset);
+        Assert(plans.Candidates.First().Statistics.GeometricAvailable==72 &&
+            plans.Candidates.All(c=>c.Statistics.Checks[LockerAisles.CheckKey]==CheckState.Pass &&
+                c.Statistics.Checks["geometry"]==CheckState.Pass),
+            "a paired pattern can shift between wall-length obstacles and recover both locker banks");
+
+        var bay=Make(RoomMode.FirstChange,1800,20500);
+        bay.CustomPeople=102;
+        bay.Doors.Add(new DoorOpening{Start=new V2(900,0),End=new V2(1800,0)});
+        Assert(Layout.Generate(project,bay).Candidates.Any(c=>c.Statistics.GeometricAvailable>=225 &&
+            c.Statistics.Checks[RoomAccess.EntryCheck]==CheckState.Pass &&
+            c.Statistics.Checks[LockerAisles.CheckKey]==CheckState.Pass && !RoomAccess.Failed(c.Statistics)),
+            "a 600 millimetre side route connects repeated cabinet rows in a narrow bay without reducing the facing aisle");
+        bay.Options.OperationDepthMm=120;
+        var nearEntry=new Placement{EquipmentId="LOCKER12",Position=new V2(0,2200)};
+        Assert(Validation.Evaluate(project,bay,new[]{nearEntry}).GeometricAvailable==12,
+            "the walking-centre reach probe uses the configured body clearance independently of a shallow locker operation zone");
+
+        var supplement=Make(RoomMode.FirstChange,6000,2100);
+        supplement.CustomPeople=40;
+        supplement.Doors.Add(new DoorOpening{Start=new V2(0,600),End=new V2(0,1500)});
+        supplement.Doors.Add(new DoorOpening{Start=new V2(6000,600),End=new V2(6000,1500)});
+        supplement.Passages.Add(new Region{Points=Geometry.Rect(0,500,6000,1100)});
+        supplement.Placed.Add(new Placement{Id="kept",RoomId=supplement.Id,EquipmentId="LOCKER12",Locked=true,
+            Position=new V2(2520,500),Rotation=180});
+        string before=Serialization.Write(supplement);
+        plans=Layout.SupplementLockers(project,supplement);
+        var first=plans.Candidates.First();
+        Assert(Serialization.Write(supplement)==before && first.AppendToPlaced && first.Items.Count==7 &&
+            first.Statistics.GeometricByInstance["kept"]==12 && first.Statistics.GeometricAvailable==96 &&
+            first.Statistics.Checks[RoomAccess.EntryCheck]==CheckState.Pass && !RoomAccess.Failed(first.Statistics),
+            "supplement fills the measured deficit around a locked off-grid locker with both doors and the shared passage open");
+        Assert(plans.Candidates.All(c=>c.AppendToPlaced &&
+            LockerAisles.PreservesCapacity(Validation.Evaluate(project,supplement,supplement.Placed),c.Statistics) &&
+            c.Statistics.Checks[LockerAisles.CheckKey]==CheckState.Pass),
+            "every automatic supplement preserves installed usable positions and the 1100 millimetre aisle");
+        supplement.Placed.AddRange(first.Items);
+        Assert(Layout.SupplementLockers(project,supplement).Candidates.Count==0,
+            "rerunning a supplement with enough geometric capacity needs no additional cabinet");
+        supplement.CustomPeople=120;
+        plans=Layout.SupplementLockers(project,supplement);
+        var last=plans.Candidates.First();
+        Assert(last.Statistics.ConditionalDeficit>0 && last.Statistics.GeometricAvailable==120,
+            "a room with a large remaining shortfall offers only the extra cabinets that actually fit");
+        supplement.Placed.AddRange(last.Items);
+        plans=Layout.SupplementLockers(project,supplement);
+        Assert(plans.Candidates.Count==0 && plans.Message.Contains("条件缺口"),
+            "an exhausted room reports its remaining shortfall without moving installed cabinets");
+    }
     static void RoomAccessChecks()
     {
         var project=Project.Create();
@@ -557,6 +613,7 @@ static class Program
     {
         UpdatedDimensionsChecks();
         LockerAisleChecks();
+        LockerSearchChecks();
         RoomAccessChecks();
         TrackAndSearchChecks();
         ShoeShapeWithDoorsChecks();

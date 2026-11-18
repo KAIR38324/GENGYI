@@ -174,7 +174,7 @@ namespace Gengyi.Cad.AutoCAD2024
             Preview.Show(this,items);
             if(Room.Boundary!=null && WitnessRoom==Room.Id && WitnessPath!=null && WitnessPath.Count>1)
             {
-                var line=CadGeometry.Polyline(WitnessPath,Room.Boundary.Frame,1);
+                var line=CadGeometry.PreviewPolyline(Document.Database,WitnessPath,Room.Boundary.Frame,1);
                 line.Closed=false;Preview.Overlay(line);
             }
         }

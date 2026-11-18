@@ -82,6 +82,8 @@ namespace Gengyi.Cad.AutoCAD2024
                 stats.Checks[LockerAisles.CheckKey]==CheckState.Fail || stats.Checks["connections"]==CheckState.Fail)
                 throw new ArgumentException(stats.Issues.FirstOrDefault()?.Message??"轨迹存在碰撞或净距不足，请调整后重试。");
             RoomAccess.RequireValid(stats);
+            if(session.Room.Mode==RoomMode.FirstChange && !LockerAisles.PreservesCapacity(session.Room.Statistics,stats))
+                throw new ArgumentException("轨迹使已有衣柜的可用人位减少，请调整柜位。");
             return candidate;
         }
 
@@ -130,7 +132,7 @@ namespace Gengyi.Cad.AutoCAD2024
             var route=withCursor && cursor!=null?vertices.Concat(new[]{cursor}):vertices;
             if(route.Count()>1)
             {
-                var guide=CadGeometry.Polyline(route,frame,8);
+                var guide=CadGeometry.PreviewPolyline(session.Document.Database,route,frame,8);
                 guide.Closed=false;graphics.Add(guide);
             }
             var blocked=new HashSet<string>(draft.Statistics.Issues.Where(i=>i.Code!="CAPACITY_BLOCKED" &&
@@ -138,10 +140,10 @@ namespace Gengyi.Cad.AutoCAD2024
             foreach(var item in draft.Items)
             {
                 short color=blocked.Contains(item.Id)?(short)1:item.Locked?(short)2:item.EquipmentId=="S48"?(short)6:(short)3;
-                graphics.Add(CadGeometry.Polyline(Geo.Outline(item),frame,color));
+                graphics.Add(CadGeometry.PreviewPolyline(session.Document.Database,Geo.Outline(item),frame,color));
                 foreach(var text in Blocks.Labels(session.Document.Database,session.Room,item))graphics.Add(text);
             }
-            Host.Panel?.SetTrackStatistics(session.Room,draft,note);
+            Host.Panel?.SetAppendStatistics(session.Room,draft,note);
         }
         protected override bool WorldDraw(WorldDraw draw)
         {

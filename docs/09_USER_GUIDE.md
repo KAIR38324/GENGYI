@@ -1,10 +1,10 @@
-# GENGYI v0.6.0 使用与宿主验收
+# GENGYI v0.7.0 使用与宿主验收
 
 本包面向 Windows AutoCAD 2024（R24.3 / .NET Framework 4.8 / x64）。当前是已经实现并通过核心测试、API 编译的插件版本，尚未在实际 CAD 中完成加载和操作验收。安装包保留 `Contents/Windows` 内全部 DLL；不要将 Autodesk DLL 拷贝进来。
 
 ## 先按这条流程使用
 
-执行 `GYSETUP` 打开工作台，标题显示 v0.6.0；`GYENV` 可查看实际 DLL 路径。按「布置」页顺序：
+执行 `GYSETUP` 打开工作台，标题显示 v0.7.0；`GYENV` 可查看实际 DLL 路径。按「布置」页顺序：
 
 1. 在「班次与人数」选择单班或双班，填写每班人数和男性比例。换鞋间和一更按所选班次合计，二更按一班周转。分房先分配整数人数，再分别乘 1.1 向上取整。
 2. 换鞋间直接选择「不叠放」或「允许叠放」。允许时仍要求每个48人柜的两端相接24人单柜；可以连续24，也可以全24。一更、二更按各自设备规则计算。
@@ -14,6 +14,12 @@
 6. 若缺图块，在同一步绑定原 CAD 设备块，或明确选择图片重建（待比对）；检查后确认入图。编辑与块库在独立页签，高级尺寸和核对参数另列。
 
 面积建议是所列设备预排的矩形包络，设备投影单独显示。它还需结合门柱、辅助设备、衣物、真实封闭和操作条件校核，不是已证明的最小合格面积。换鞋单柜标「每侧3层」，S48标「上下2柜 / 每侧6层 / 高1200mm」，一更柜标「3列×4层」。旧版本已入图的受管理设备在执行 `GYSETUP` 时补上标识。原生 `ATTSYNC` 如清除了这些自有属性，再执行 `GYSETUP` 恢复。
+
+## 一更自动补排（GYFILL）
+
+空房间点「生成布置方案」。一更会尝试沿实际墙向、从障碍和门内净空后起排，并检查侧向通行。两侧柜面相对时共享至少 1100 mm 的柜间净空。
+
+有已入图衣柜时，点「一更自动补排」。搜索保留原有柜位和可用人位，避开门、柱和通行保留区。侧栏显示当前缺口、本次预计新增和补排后预计缺口。按「确认当前方案入图」只追加所选方案中的新柜。需要再补时，按入图后的状态重新执行 `GYFILL`。
 
 ## 沿轨迹布置（GYTRACK）
 
@@ -105,10 +111,12 @@ S48 允许存储，但 1200 mm 顶面不作为 600 mm 跨坐面。单层跨柜�
 9. 一更选两个 900 mm 门，人员净宽 600 mm。生成沿墙柜排，核对两个门均畅通、相对柜面间距至少 1100 mm。尝试拖柜挡住第二个门，检查预警。取消追加门，再切房、保存重开和撤销重做，核对门和通行区仍属于原房间。
 
 10. 使用轨迹分别画成三排 S 形和靠墙衣柜。测试 Stack、Low、Flip、Undo、Esc、回车后的缺口与追加入图，再用一次 UNDO 撤销本次追加。
+11. 在有两处出入口的一更房间放置并锁定一柜，执行 `GYFILL`。核对补排前后原柜的位置和可用人数、两个门口、柜间净距以及侧栏缺口。确认追加并执行一次 UNDO，核对只撤销新增柜。
+12. 在既有边界内预览候选。分别使用已绑定、原块内部图层隐藏以及缺少原块的柜型，核对轮廓和文字均可见。切换候选并执行 `GYCANCEL`，核对柜体轮廓、文字与门位标记一起清理。
 
 核心测试、编译和包结构检查已可自动执行；以上宿主步骤没有在当前 Linux 环境运行，不预先勾选通过。
 
-常用命令：`GYSETUP`、`GYENV`、`GYPLAN`、`GYESTIMATE`、`GYRECT`、`GYDOORS`、`GYPASSAGES`、`GYOBSTACLES`、`GYCLOSURES`、`GYGENERATE`、`GYTRACK`、`GYPREVIEW`、`GYCOMMIT`、`GYCANCEL`、`GYDRAG`、`GYROTATE`、`GYTYPE`、`GYLENGTH`、`GYCROSS`、`GYBLOCK`、`GYIMPORT`、`GYREBUILD`、`GYVERIFY`、`GYADD`、`GYLOCK`、`GYDELETE`、`GYTRANSFER`、`GYCHECK`、`GYSTATS`、`GYEXPORT`。导出是本地 JSON，并保留毫米坐标、来源和独立校核状态。
+常用命令：`GYSETUP`、`GYENV`、`GYPLAN`、`GYESTIMATE`、`GYRECT`、`GYDOORS`、`GYPASSAGES`、`GYOBSTACLES`、`GYCLOSURES`、`GYGENERATE`、`GYFILL`、`GYTRACK`、`GYPREVIEW`、`GYCOMMIT`、`GYCANCEL`、`GYDRAG`、`GYROTATE`、`GYTYPE`、`GYLENGTH`、`GYCROSS`、`GYBLOCK`、`GYIMPORT`、`GYREBUILD`、`GYVERIFY`、`GYADD`、`GYLOCK`、`GYDELETE`、`GYTRANSFER`、`GYCHECK`、`GYSTATS`、`GYEXPORT`。导出是本地 JSON，并保留毫米坐标、来源和独立校核状态。
 
 ## 48人柜必须交错布置
 

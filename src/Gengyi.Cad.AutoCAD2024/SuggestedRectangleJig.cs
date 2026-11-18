@@ -42,7 +42,7 @@ namespace Gengyi.Cad.AutoCAD2024
         {
             Clear();var b=Boundary();
             var labelRoom=new Room{Boundary=b,Options=options};
-            graphics.Add(CadGeometry.Polyline(Gengyi.Core.Geometry.Rect(0,0,b.Width,b.Height),frame,3));
+            graphics.Add(CadGeometry.PreviewPolyline(database,Gengyi.Core.Geometry.Rect(0,0,b.Width,b.Height),frame,3));
             foreach(var item in estimate.Items)
             {
                 // Rotate the physical instance, so its outline and labels share one transform.
@@ -50,7 +50,7 @@ namespace Gengyi.Cad.AutoCAD2024
                 var shown=new Placement{EquipmentId=item.EquipmentId,Length=item.Length,
                     Position=rotated?new V2(estimate.HeightMm-item.Position.Y,item.Position.X):item.Position,
                     Rotation=item.Rotation+(rotated?90:0),LocalHooks=item.LocalHooks,PhysicalOutline=item.PhysicalOutline};
-                graphics.Add(CadGeometry.Polyline(Gengyi.Core.Geometry.Outline(shown),frame,8));
+                graphics.Add(CadGeometry.PreviewPolyline(database,Gengyi.Core.Geometry.Outline(shown),frame,8));
                 foreach(var text in Blocks.Labels(database,labelRoom,shown))graphics.Add(text);
             }
             double height=Math.Max(120,Math.Min(b.Width,b.Height)/45);

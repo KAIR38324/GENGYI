@@ -142,11 +142,18 @@ namespace Gengyi.Cad.AutoCAD2024
             }
             return result;
         }
-        internal static Polyline Polyline(IEnumerable<V2> points,Frame frame,short color=3)
+        internal static Polyline PreviewPolyline(Database database,IEnumerable<V2> points,Frame frame,short color)
         {
-            var result=new Polyline();int i=0;
-            foreach(var p in points)result.AddVertexAt(i++,new Point2d(p.X,p.Y),0,0,0);
-            result.Closed=true;result.ColorIndex=color;result.TransformBy(ToWorld(frame));return result;
+            var result=new Polyline();
+            try
+            {
+                result.SetDatabaseDefaults(database);
+                result.Layer="0";result.Linetype="Continuous";result.ColorIndex=color;
+                int i=0;
+                foreach(var p in points)result.AddVertexAt(i++,new Point2d(p.X,p.Y),0,0,0);
+                result.Closed=true;result.TransformBy(ToWorld(frame));return result;
+            }
+            catch{result.Dispose();throw;}
         }
     }
 }

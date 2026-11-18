@@ -234,20 +234,25 @@ namespace Gengyi.Cad.AutoCAD2024
             s.Edit(_=>{s.Room.DirtySeed=dirty;s.Room.CleanSeed=clean;s.Room.InvalidateCandidates();});
         });
         [CommandMethod("GENGYI","GYGENERATE",CommandFlags.Modal)]
-        public void Generate()=>Run(s=>
+        public void Generate()=>GenerateCandidates(false);
+        [CommandMethod("GENGYI","GYFILL",CommandFlags.Modal)]
+        public void Fill()=>GenerateCandidates(true);
+        private static void GenerateCandidates(bool supplement)=>Run(s=>
         {
-            NeedBoundary(s);s.Preview.Clear();
+            NeedBoundary(s);
+            if(supplement && s.Room.Mode!=RoomMode.FirstChange)throw new ArgumentException("自动补排仅支持一更房间。");
             var project=Serialization.Copy(s.Project);var room=project.Current;
             SearchResult result;
-            using(var dialog=new SearchDialog(project,room))
+            using(var dialog=new SearchDialog(project,room,supplement))
             {
                 Autodesk.AutoCAD.ApplicationServices.Application.ShowModalDialog(dialog);
                 if(dialog.Cancelled)throw new Cancelled();
                 result=dialog.Result();
             }
             if(CadApplication.DocumentManager.MdiActiveDocument!=s.Document)throw new Cancelled();
-            s.Edit(_=>{s.Room.Candidates=result.Candidates;s.Room.SelectedCandidate=0;s.Room.PreviewVisible=result.Candidates.Count>0;s.Room.Stale=false;});
             s.Document.Editor.WriteMessage("\n"+result.Message);
+            if(supplement && result.Candidates.Count==0)return;
+            s.Edit(_=>{s.Room.Candidates=result.Candidates;s.Room.SelectedCandidate=0;s.Room.PreviewVisible=result.Candidates.Count>0;s.Room.Stale=false;});
             s.EnableRoomGraphics();
         });
         [CommandMethod("GENGYI","GYTRACK",CommandFlags.Modal)]
@@ -319,7 +324,6 @@ namespace Gengyi.Cad.AutoCAD2024
             ShoeStacking.RequireValid(chosen.Items);
             foreach(var p in chosen.Items){Layout.ResolveMapping(s.Project,p);Blocks.Mapping(s,p);}
             LockerAisles.RequireValid(s.Room,chosen.Items);
-            chosen.Statistics=Validation.Evaluate(s.Project,s.Room,chosen.Items);
             string action=chosen.AppendToPlaced?"Append":s.Room.Placed.Count==0?"Replace":
                 CadGeometry.Keyword(s.Document.Editor,"当前房间已有设备","Replace Append Cancel","Replace");
             if(action=="Replace" && s.Room.Placed.Any(p=>p.Locked))throw new ArgumentException("当前房间含锁定设备，请先解锁后替换方案。");
@@ -329,14 +333,16 @@ namespace Gengyi.Cad.AutoCAD2024
             {
                 finalItems=s.Room.Placed.Concat(chosen.Items).ToList();
                 ShoeStacking.RequireValid(finalItems);LockerAisles.RequireValid(s.Room,finalItems);
-                chosen.Statistics=Validation.Evaluate(s.Project,s.Room,finalItems);
             }
+            chosen.Statistics=Validation.Evaluate(s.Project,s.Room,finalItems);
             if(s.Room.Mode==RoomMode.Shoe && finalItems.Count>0 &&
                 (!Layout.IsShoeLayout(finalItems) || chosen.Statistics.Checks["connections"]==CheckState.Fail))
                 throw new ArgumentException("换鞋间入图须使用完整相接的 S 形鞋柜及交替的 R650 转角。请重新生成或恢复柜链。");
             RoomAccess.RequireValid(chosen.Statistics);
             if(chosen.Statistics.Checks["geometry"]==CheckState.Fail || chosen.Statistics.Checks["boundary"]==CheckState.Fail)
                 throw new ArgumentException("存在实体碰撞、越界或边界净距问题，请调整后再入图。");
+            if(action=="Append" && s.Room.Mode==RoomMode.FirstChange && !LockerAisles.PreservesCapacity(s.Room.Statistics,chosen.Statistics))
+                throw new ArgumentException("追加后已有衣柜的可用人位减少，请重新补排或调整柜位。");
             int deficit=chosen.Statistics.Effective.HasValue?Math.Max(0,chosen.Statistics.Target-chosen.Statistics.Effective.Value):chosen.Statistics.ConditionalDeficit;
             if((chosen.Statistics.Effective==null || deficit>0) && CadGeometry.Keyword(s.Document.Editor,
                 deficit>0?$"当前方案仍缺 {deficit} 人位，是否按容量不足的待核草案入图":"当前方案尚有待核项，是否作为待核草案入图","Yes No","No")!="Yes")throw new Cancelled();
@@ -366,8 +372,9 @@ namespace Gengyi.Cad.AutoCAD2024
                 }
                 if(chosen.AppendToPlaced)
                 {
-                    s.Room.Candidates.RemoveAt(s.Room.SelectedCandidate);
-                    s.Room.SelectedCandidate=Math.Max(0,s.Room.SelectedCandidate-1);
+                    if(s.Room.Mode==RoomMode.FirstChange)s.Room.Candidates.RemoveAll(candidate=>candidate.AppendToPlaced);
+                    else s.Room.Candidates.RemoveAt(s.Room.SelectedCandidate);
+                    s.Room.SelectedCandidate=Math.Max(0,Math.Min(s.Room.SelectedCandidate-1,s.Room.Candidates.Count-1));
                 }
                 s.Room.PreviewVisible=false;
             });
