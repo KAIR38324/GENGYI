@@ -35,6 +35,7 @@ namespace Gengyi.Core
         {
             var options=Serialization.Copy(room.Options);
             options.ShoeCapacities=options.ShoeCapacities.Distinct().OrderBy(c=>c).ToList();
+            if(room.Mode==RoomMode.FirstChange)options.PlanningAisleMm=options.PlanningAisleFor(room.Mode);
             string Number(decimal value)=>value.ToString("G29",CultureInfo.InvariantCulture);
             return Serialization.Write(new
             {
@@ -59,7 +60,7 @@ namespace Gengyi.Core
             population.Validate(); room.Options.Validate();
             int target = population.For(room);
             var o = room.Options;
-            double aisle = Math.Max(o.PlanningAisleMm, o.OperationDepthMm ?? 0);
+            double aisle = o.PlanningAisleFor(room.Mode);
             var output = new AreaEstimate
             {
                 Target = target,
@@ -68,7 +69,7 @@ namespace Gengyi.Core
                 Assumptions = room.Mode == RoomMode.Shoe
                     ? $"鞋柜深{Equipment.ShoeDepthMm:0} mm（含中间{Equipment.ShoeDuctMm:0} mm通风道），含四周 {o.ShoeBoundaryMm:0} mm 边距与假定 R{Equipment.CornerRadiusMm:0} 扇形角；连接净距至少 {aisle:0} mm。48人柜必须24—48—24交错。门柱、封闭与脏净绕行待选框后校核。"
                     : $"按操作/通行净距 {aisle:0} mm、背距 {o.RearGapMm:0} mm 预排；门柱、更衣动作及辅助设备另核。" +
-                        (room.Mode == RoomMode.SecondChange ? $" 挂钩节距 {o.HookPitchMm}、端距 {o.HookStartMarginMm}/{o.HookEndMarginMm} mm；450 mm 仅架体深度，衣物与安装待核。" : "")
+                        (room.Mode == RoomMode.SecondChange ? $" 挂钩节距 {o.HookPitchMm}、端距 {o.HookStartMarginMm}/{o.HookEndMarginMm} mm；450 mm 仅架体深度，衣物与安装待核。" : " 一更两侧为衣柜的通道净距至少1100 mm；为柜面间空距，不含柜深，也不叠加为2200 mm。")
             };
             if (target == 0)
             {

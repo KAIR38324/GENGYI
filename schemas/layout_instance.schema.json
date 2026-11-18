@@ -270,6 +270,16 @@
             "requires_input",
             "approximate_only"
           ]
+        },
+        "locker_aisle": {
+          "description": "First-change cabinet aisles require at least 1100 mm clear between cabinet fronts; back-to-back and side contacts are exempt.",
+          "enum": [
+            "not_run",
+            "pass",
+            "fail",
+            "requires_input",
+            "approximate_only"
+          ]
         }
       }
     },

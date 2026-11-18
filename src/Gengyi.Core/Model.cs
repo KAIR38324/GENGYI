@@ -107,6 +107,8 @@ namespace Gengyi.Core
         public int HookEndMarginMm { get; set; } = 50;
         public double? InstallationElevationMm { get; set; }
         public bool Orthogonal { get; set; } = true;
+        public double PlanningAisleFor(RoomMode mode)=>Math.Max(Math.Max(PlanningAisleMm,OperationDepthMm??0),
+            mode==RoomMode.FirstChange?LockerAisles.MinimumMm:0);
         public void Validate()
         {
             if (ShoeBoundaryMm < 0 || PlanningAisleMm < 100 || WalkWidthMm < 100 || WalkWidthMm > 2000 || RearGapMm < 0 ||

@@ -13,7 +13,7 @@ namespace Gengyi.Core
         {
             if(target==0){yield return new Candidate{Family="不规则空房间"};yield break;}
             var boundary=room.Boundary!;
-            double aisle=Math.Max(room.Options.PlanningAisleMm,room.Options.OperationDepthMm??0);
+            double aisle=room.Options.PlanningAisleFor(room.Mode);
             Geo actualRoom=Geometry.RoomPolygon(boundary),usable=actualRoom;
             if(room.Mode==RoomMode.Shoe)usable=usable.Buffer(-room.Options.ShoeBoundaryMm,16);
             var fixedObjects=Geometry.Union(room.Obstacles.Concat(room.Closures).Select(Geometry.RegionFootprint));

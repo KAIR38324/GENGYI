@@ -111,7 +111,9 @@
         "front_operation_depth_mm": null,
         "door_opening_geometry": "from_original_block_or_product_drawing",
         "unverified_parameter_behavior": "allow_labelled_geometry_preview_but_never_claim_operation_pass",
-        "historical_950_mm_opposing_gap_is_validated_default": false
+        "historical_950_mm_opposing_gap_is_validated_default": false,
+        "minimum_inter_cabinet_aisle_mm": 1100,
+        "inter_cabinet_aisle_definition": "clear distance between fronts, shared by both sides; excludes cabinet depths, back-to-back and side contacts"
       },
       "capacity_rules": {
         "people_per_cabinet": 12,

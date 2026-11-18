@@ -12,7 +12,7 @@ namespace Gengyi.Core
         {
             room.Options.Validate();
             var result = new Statistics { Target = project.Population.For(room) };
-            foreach (string key in new[] { "geometry", "boundary", "connections", ShoeStacking.CheckKey, "hygiene_without_crossing", "walking_without_crossing", "workflow_with_crossing", "front_access", "entry_reachability", "source_block", "operation", "installation" })
+            foreach (string key in new[] { "geometry", "boundary", "connections", ShoeStacking.CheckKey, LockerAisles.CheckKey, "hygiene_without_crossing", "walking_without_crossing", "workflow_with_crossing", "front_access", "entry_reachability", "source_block", "operation", "installation" })
                 result.Checks[key] = CheckState.NotRun;
             if (room.Boundary == null)
             {
@@ -27,6 +27,9 @@ namespace Gengyi.Core
             var stackingIssues=ShoeStacking.Violations(items);
             result.Checks[ShoeStacking.CheckKey]=stackingIssues.Count==0?CheckState.Pass:CheckState.Fail;
             foreach(var issue in stackingIssues){invalid.Add(issue.InstanceId);result.Issues.Add(issue);}
+            var lockerAisleIssues=LockerAisles.Violations(room,items);
+            result.Checks[LockerAisles.CheckKey]=lockerAisleIssues.Count==0?CheckState.Pass:CheckState.Fail;
+            foreach(var issue in lockerAisleIssues){invalid.Add(issue.InstanceId);result.Issues.Add(issue);}
             var obstacles = new List<Geo>();
             bool contextValid = room.ConstraintIssue.Length == 0;
             if (!contextValid) Issue(result, "BOUNDARY_CHANGED_INVALID", "", room.ConstraintIssue);
@@ -249,7 +252,8 @@ namespace Gengyi.Core
             bool prerequisites = result.Checks["source_block"] == CheckState.Pass && result.Checks["operation"] == CheckState.Pass &&
                 contextValid && result.Checks["entry_reachability"] == CheckState.Pass && result.Checks["connections"] == CheckState.Pass &&
                 result.Checks["installation"] == CheckState.Pass && result.Checks["hygiene_without_crossing"] == CheckState.Pass &&
-                result.Checks["workflow_with_crossing"] == CheckState.Pass && result.Checks[ShoeStacking.CheckKey] == CheckState.Pass;
+                result.Checks["workflow_with_crossing"] == CheckState.Pass && result.Checks[ShoeStacking.CheckKey] == CheckState.Pass &&
+                result.Checks[LockerAisles.CheckKey] == CheckState.Pass;
             if (prerequisites) result.Effective = result.GeometricAvailable;
             return result;
         }

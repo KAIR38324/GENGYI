@@ -162,7 +162,7 @@ namespace Gengyi.Core
             foreach (bool vertical in new[] { false, true })
             {
                 double w = vertical ? b.Height : b.Width, h = vertical ? b.Width : b.Height;
-                double rear = room.Options.RearGapMm, aisle = room.Options.PlanningAisleMm;
+                double rear = room.Options.RearGapMm, aisle = room.Options.PlanningAisleFor(room.Mode);
                 var wall = new Candidate { Family = "沿墙柜排/" + (vertical ? "竖" : "横") };
                 int perRow = Math.Max(0, (int)Math.Floor(w / 1140));
                 for (int n = 0; n < perRow && wall.Items.Count < count && h >= 500 + rear; n++)

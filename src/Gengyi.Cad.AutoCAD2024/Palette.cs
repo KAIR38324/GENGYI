@@ -146,7 +146,7 @@ namespace Gengyi.Cad.AutoCAD2024
 
             var common=Card(settings,"本房间的空间参数","毫米。预排通道是规划假设，实际操作深度需按现场核对。",boldFont);
             NumberRow(common,"预排通道 mm",aisle,"人员净宽 mm",walkWidth);NumberRow(common,"实际操作深度 mm",operation,"柜后安装距 mm",rear);
-            Add(common,Text("实际操作深度填 0 表示尚未核对。"));Add(common,orth);Add(common,actionsVerified);
+            Add(common,Text("实际操作深度填 0 表示尚未核对。一更柜间通道至少1100 mm；两侧共用同一净距。"));Add(common,orth);Add(common,actionsVerified);
             var roomPeople=Card(settings,"本房间备用人数","默认沿用项目备用率。勾选后只影响当前房间。",boldFont);Add(roomPeople,reserveOverride);NumberRow(roomPeople,"本房间备用率 %",roomReserve);
             shoeSettings=Card(settings,"换鞋柜参数","柜宽650 mm（含中间50 mm通风道），转角R650。S24每侧3层；S48每侧6层。",boldFont);
             NumberRow(shoeSettings,"鞋柜到边界 mm",margin);Add(shoeSettings,Text("允许的单柜型号（不会拉伸设备）："));
@@ -425,6 +425,7 @@ namespace Gengyi.Cad.AutoCAD2024
                 string signature=string.Join(";",s.Project.Rooms.Select(r=>r.Id+":"+r.Name));
                 if(signature!=roomList){rooms.Items.Clear();foreach(var room in s.Project.Rooms)rooms.Items.Add(new RoomChoice(room.Id,room.Name));roomList=signature;}
                 rooms.SelectedIndex=s.Project.Rooms.FindIndex(r=>r.Id==s.Project.CurrentRoomId);
+                aisle.Minimum=s.Room.Mode==RoomMode.FirstChange?(decimal)LockerAisles.MinimumMm:100;
                 if(!preserveInputs)
                 {
                     inputsDirty=false;Set(registered,s.Project.Population.Registered);Set(shift,s.Project.Population.Shift);Set(male,s.Project.Population.MaleRatio*100);Set(reserve,s.Project.Population.Reserve*100);
@@ -468,9 +469,11 @@ namespace Gengyi.Cad.AutoCAD2024
                     bool badGeometry=selected.Statistics.Checks.TryGetValue("geometry",out var geometry) && geometry==CheckState.Fail;
                     bool badBoundary=selected.Statistics.Checks.TryGetValue("boundary",out var edge) && edge==CheckState.Fail;
                     bool badStacking=selected.Statistics.Checks.TryGetValue(ShoeStacking.CheckKey,out var stackingState) && stackingState==CheckState.Fail;
+                    bool badLockerAisle=selected.Statistics.Checks.TryGetValue(LockerAisles.CheckKey,out var lockerAisleState) && lockerAisleState==CheckState.Fail;
                     if(badStacking)candidateDetail.Text+="\r\n交错规则未满足：每个48人柜的两端都须相接24人单柜。";
-                    candidateCanCommit=missing==0 && !badGeometry && !badBoundary && !badStacking;
-                    tips.SetToolTip(commit,badStacking?"每个48人柜两端必须是相接的24人单柜，先修正交错布置。":missing>0?"先接入设备图块，才能确认入图。":badGeometry || badBoundary?"先修正碰撞、尺寸或边距问题。":"待核条件会在入图时要求明确作为草案确认。");
+                    if(badLockerAisle)candidateDetail.Text+="\r\n一更衣柜间通道净距不足1100 mm，请调整柜排。";
+                    candidateCanCommit=missing==0 && !badGeometry && !badBoundary && !badStacking && !badLockerAisle;
+                    tips.SetToolTip(commit,badStacking?"每个48人柜两端必须是相接的24人单柜，先修正交错布置。":badLockerAisle?"一更两侧衣柜之间需留至少1100 mm净空。":missing>0?"先接入设备图块，才能确认入图。":badGeometry || badBoundary?"先修正碰撞、尺寸或边距问题。":"待核条件会在入图时要求明确作为草案确认。");
                 }
                 else{candidateCanCommit=false;candidateDetail.Text="尚无方案。预览并选择实际边界后，点击“生成布置方案”。";sourceInfo.Visible=false;rebuild.Visible=bind.Visible=false;}
                 var stats=s.Room.PreviewVisible && selected!=null?selected.Statistics:s.Room.Statistics;
@@ -499,17 +502,20 @@ namespace Gengyi.Cad.AutoCAD2024
             footerTitle.Text=$"目标 {stats.Target}  ·  名义 {stats.Nominal}  ·  有效 {(stats.Effective.HasValue?stats.Effective.Value.ToString():"待核")}";
             footerDetail.Text=$"{prefix.Trim()}  /  条件缺口 {stats.ConditionalDeficit} 人  /  设备投影 {stats.ProjectionM2:0.##} ㎡";
             bool badStacking=stats.Checks.TryGetValue(ShoeStacking.CheckKey,out var state) && state==CheckState.Fail;
+            bool badLockerAisle=stats.Checks.TryGetValue(LockerAisles.CheckKey,out var lockerAisleState) && lockerAisleState==CheckState.Fail;
             if(badStacking)footerDetail.Text+="\r\n48人柜两邻24人柜：未通过，请修正24—48—24布置。";
-            footerDetail.ForeColor=badStacking?Color.Firebrick:Muted;
+            if(badLockerAisle)footerDetail.Text+="\r\n一更柜间通道：不足1100 mm，请调整柜排。";
+            footerDetail.ForeColor=badStacking || badLockerAisle?Color.Firebrick:Muted;
             statistics.Text=prefix.Trim()+"\r\n"+footerTitle.Text+"\r\n"+
                 $"地面柜组 {stats.Groups} / 箱体 {stats.Boxes} / 转角 {stats.Corners}\r\n挂架 {stats.HangerSegments} 段 / 总长 {stats.HangerLengthMm:0.###} mm\r\n"+
                 (stats.NominalShoeCells>0?$"名义储格 {stats.NominalShoeCells}（每人2格）\r\n":"")+
-                string.Join("\r\n",stats.Checks.Where(c=>c.Key!=ShoeStacking.CheckKey || lastSession?.Room.Mode==RoomMode.Shoe).Select(c=>CheckName(c.Key)+"："+StateName(c.Value)))+"\r\n"+
+                string.Join("\r\n",stats.Checks.Where(c=>(c.Key!=ShoeStacking.CheckKey || lastSession?.Room.Mode==RoomMode.Shoe) &&
+                    (c.Key!=LockerAisles.CheckKey || lastSession?.Room.Mode==RoomMode.FirstChange)).Select(c=>CheckName(c.Key)+"："+StateName(c.Value)))+"\r\n"+
                 string.Join("\r\n",stats.Issues.Take(16).Select(i=>i.Message+(i.InstanceId.Length>0?" ["+i.InstanceId.Substring(0,Math.Min(8,i.InstanceId.Length))+"]":"")));
         }
         private static string CheckName(string key)=>key switch
         {
-            "geometry"=>"碰撞与尺寸","boundary"=>"房间边界与边距","connections"=>"柜组连接",ShoeStacking.CheckKey=>"48人柜两邻24人柜","front_access"=>"操作侧可达",
+            "geometry"=>"碰撞与尺寸","boundary"=>"房间边界与边距","connections"=>"柜组连接",ShoeStacking.CheckKey=>"48人柜两邻24人柜",LockerAisles.CheckKey=>"一更柜间净距至少1100 mm","front_access"=>"操作侧可达",
             "entry_reachability"=>"入口可达","hygiene_without_crossing"=>"实体脏净分隔","walking_without_crossing"=>"人员无法绕行",
             "workflow_with_crossing"=>"跨柜转换流程","source_block"=>"设备图块比对","operation"=>"实际操作空间","installation"=>"挂架安装条件","auxiliary_operations"=>"辅助设备操作",_=>key
         };

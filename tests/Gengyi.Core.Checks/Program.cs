@@ -31,6 +31,65 @@ static class Program
             EquipmentPresentation.Describe(corner,new LayoutOptions()).CompactLines.SequenceEqual(new[]{"R650"}),"on-drawing labels stay compact while retaining cabinet type, people and essential levels");
     }
     static List<V2> LOutline()=>new List<V2>{new V2(0,0),new V2(18000,0),new V2(18000,8000),new V2(8000,8000),new V2(8000,18000),new V2(0,18000)};
+    static void LockerAisleChecks()
+    {
+        var project=Project.Create();var room=Make(RoomMode.FirstChange,6000,6000);
+        room.Options.PlanningAisleMm=100;room.Options.OperationDepthMm=100;room.Options.DoorAndOperationVerified=true;
+        var facing=new List<Placement>
+        {
+            new Placement{Id="lower",EquipmentId="LOCKER12",Position=new V2(2140,1500),Rotation=180},
+            new Placement{Id="upper",EquipmentId="LOCKER12",Position=new V2(1000,2600)}
+        };
+        var stats=Validation.Evaluate(project,room,facing);
+        Assert(stats.Checks[LockerAisles.CheckKey]==CheckState.Pass && stats.GeometricAvailable==24,
+            "two facing locker fronts share one exact 1100 millimetre aisle, without doubling it or including cabinet depths");
+        var tight=Serialization.Copy(facing);tight[1].Position.Y-=.1;
+        stats=Validation.Evaluate(project,room,tight);
+        Assert(stats.Checks["geometry"]==CheckState.Pass && stats.Checks[LockerAisles.CheckKey]==CheckState.Fail && stats.GeometricAvailable==0 && stats.Effective==null &&
+            stats.Issues.Where(d=>d.Code=="LOCKER_AISLE_CLEARANCE").Select(d=>d.InstanceId).Distinct().Count()==2,
+            "1099.9 millimetres fails the locker aisle rule for both cabinets even with smaller verified planning/operation inputs");
+        bool rejected=false;try{LockerAisles.RejectNewViolations(room,facing,tight);}catch(ArgumentException){rejected=true;}
+        Assert(rejected,"plugin moves and rotations reject a new undersized locker aisle");
+        var narrower=Serialization.Copy(tight);narrower[1].Position.Y=2500;
+        rejected=false;try{LockerAisles.RejectNewViolations(room,tight,narrower);}catch(ArgumentException){rejected=true;}
+        Assert(rejected,"legacy undersized locker aisles cannot be made narrower by reusing already-invalid cabinet IDs");
+        bool repairAllowed=true;try{LockerAisles.RejectNewViolations(room,narrower,tight);LockerAisles.RejectNewViolations(room,tight,facing);}catch(ArgumentException){repairAllowed=false;}
+        Assert(repairAllowed,"legacy locker aisles may be widened incrementally until the 1100 millimetre minimum is restored");
+        rejected=false;try{LockerAisles.RequireValid(room,tight);}catch(ArgumentException){rejected=true;}
+        Assert(rejected,"commit and append cannot certify or insert an undersized locker aisle as a pending draft");
+        var rotated=Serialization.Copy(tight);
+        foreach(var item in rotated){item.Position=item.Position.Rotate(90)+new V2(5000,0);item.Rotation=Geometry.Normalize(item.Rotation+90);}
+        Assert(LockerAisles.Violations(room,rotated).Select(d=>d.InstanceId).Distinct().Count()==2,
+            "locker aisle width follows physical rotated fronts rather than global bounding-box axes");
+        var touching=new List<Placement>
+        {
+            new Placement{Id="a",EquipmentId="LOCKER12",Position=new V2(1000,2500)},
+            new Placement{Id="b",EquipmentId="LOCKER12",Position=new V2(2140,3500),Rotation=180}
+        };
+        Assert(LockerAisles.Violations(room,touching).Count==0,"back-to-back locker bodies may touch without a fictitious 1100 millimetre rear aisle");
+        touching[1].Position=new V2(2140,2500);touching[1].Rotation=0;
+        Assert(LockerAisles.Violations(room,touching).Count==0,"side-by-side lockers may form one continuous row without a fictitious side aisle");
+        var single=new Placement{EquipmentId="LOCKER12",Position=new V2(1000,1000)};
+        room.Options.OperationDepthMm=1000;
+        Assert(Validation.Evaluate(project,room,new[]{single}).GeometricAvailable==12,
+            "the inter-cabinet minimum does not impose an unrelated 1100 millimetre wall setback on a lone cabinet");
+        Assert(LockerAisles.Violations(Make(RoomMode.Shoe),tight).Count==0,"the first-change aisle rule does not change shoe-room rules");
+        room.Options.PlanningAisleMm=1000;room.Options.OperationDepthMm=null;room.CustomPeople=96;
+        var estimate=AreaPlanning.Estimate(project.Population,room);
+        Assert(estimate.Assumptions.Contains("1100") && estimate.Options.Count>0 && estimate.Options.All(option=>
+        {
+            var preview=Serialization.Copy(room);preview.Boundary=new Boundary{Width=option.WidthMm,Height=option.HeightMm};
+            return Validation.Evaluate(project,preview,option.Items).GeometricAvailable>=96 && LockerAisles.Violations(preview,option.Items).Count==0;
+        }),"pre-boundary locker area previews reserve the 1100 millimetre aisle with enough usable cabinet capacity");
+        room.Boundary=new Boundary{Width=6000,Height=2100};
+        var generated=Layout.Generate(project,room);
+        Assert(generated.Candidates.Count>0 && generated.Candidates.All(c=>c.Statistics.Checks[LockerAisles.CheckKey]==CheckState.Pass) && generated.Candidates.Any(c=>c.Statistics.GeometricAvailable>=96),
+            "rectangular generation fits two 500 millimetre locker banks around an exact 1100 millimetre shared aisle");
+        room.Boundary=BoundaryEditing.FromOutline(LOutline(),new Frame());room.CustomPeople=300;
+        generated=Layout.Generate(project,room);
+        Assert(generated.Candidates.Count>1 && generated.Candidates.All(c=>c.Statistics.Checks[LockerAisles.CheckKey]==CheckState.Pass) && generated.Candidates.Any(c=>c.Statistics.GeometricAvailable>=300),
+            "irregular first-change layouts preserve the cabinet aisle minimum across real room partitions");
+    }
     static void IrregularBoundaryAndWorkflowChecks()
     {
         var outline=LOutline();var boundary=BoundaryEditing.FromOutline(outline,new Frame(),"USER-L");
@@ -264,6 +323,7 @@ static class Program
     static void Main(string[] args)
     {
         UpdatedDimensionsChecks();
+        LockerAisleChecks();
         IrregularBoundaryAndWorkflowChecks();
         ShoeStackingChecks();
         BoundaryEditingChecks();

@@ -207,13 +207,18 @@ namespace Gengyi.Cad.AutoCAD2024
             var chosen=Serialization.Copy(s.Room.Candidates[s.Room.SelectedCandidate]);
             ShoeStacking.RequireValid(chosen.Items);
             foreach(var p in chosen.Items){Layout.ResolveMapping(s.Project,p);Blocks.Mapping(s,p);}
+            LockerAisles.RequireValid(s.Room,chosen.Items);
             chosen.Statistics=Validation.Evaluate(s.Project,s.Room,chosen.Items);
             if(chosen.Statistics.Checks["geometry"]==CheckState.Fail || chosen.Statistics.Checks["boundary"]==CheckState.Fail)
                 throw new ArgumentException("候选存在实体碰撞/越界/边界净距问题，请调整后再入图。");
             if(s.Room.Placed.Any(p=>p.Locked))throw new ArgumentException("当前房间含锁定设备，请先解锁后替换方案。");
             string action=s.Room.Placed.Count==0?"Replace":CadGeometry.Keyword(s.Document.Editor,"当前房间已有设备","Replace Append Cancel","Replace");
             if(action=="Cancel")throw new Cancelled();
-            if(action=="Append")ShoeStacking.RequireValid(s.Room.Placed.Concat(chosen.Items).ToList());
+            if(action=="Append")
+            {
+                var combined=s.Room.Placed.Concat(chosen.Items).ToList();
+                ShoeStacking.RequireValid(combined);LockerAisles.RequireValid(s.Room,combined);
+            }
             int deficit=chosen.Statistics.Effective.HasValue?Math.Max(0,chosen.Statistics.Target-chosen.Statistics.Effective.Value):chosen.Statistics.ConditionalDeficit;
             if((chosen.Statistics.Effective==null || deficit>0) && CadGeometry.Keyword(s.Document.Editor,
                 deficit>0?$"当前方案仍缺 {deficit} 人位，是否按容量不足的待核草案入图":"当前方案尚有待核项，是否作为待核草案入图","Yes No","No")!="Yes")throw new Cancelled();
@@ -364,6 +369,7 @@ namespace Gengyi.Cad.AutoCAD2024
                 if(source!=null)ShoeStacking.RejectNewViolations(source.Placed,source.Placed.Where(p=>p.NativeHandle!=br.Handle.ToString()).ToList());
                 item.RoomId=s.Room.Id;CadGeometry.ReadTransform(s.Room,item,br,map);
                 ShoeStacking.RejectNewViolations(s.Room.Placed,s.Room.Placed.Concat(new[]{item}).ToList());
+                LockerAisles.RejectNewViolations(s.Room,s.Room.Placed,s.Room.Placed.Concat(new[]{item}).ToList());
                 Store.Instance(br,item,tx);
             });
         });
@@ -434,6 +440,7 @@ namespace Gengyi.Cad.AutoCAD2024
         {
             var scene=s.Room.Candidates[s.Room.SelectedCandidate].Items;
             ShoeStacking.RejectNewViolations(scene,scene.Select(p=>copies.FirstOrDefault(q=>q.Id==p.Id)??p).ToList());
+            LockerAisles.RejectNewViolations(s.Room,scene,scene.Select(p=>copies.FirstOrDefault(q=>q.Id==p.Id)??p).ToList());
             s.Edit(_=>
             {
                 var candidate=s.Room.Candidates[s.Room.SelectedCandidate];
@@ -456,6 +463,7 @@ namespace Gengyi.Cad.AutoCAD2024
         {
             var proposed=s.Room.Placed.Select(p=>copies.FirstOrDefault(q=>q.Id==p.Id)??p).ToList();
             ShoeStacking.RejectNewViolations(s.Room.Placed,proposed);
+            LockerAisles.RejectNewViolations(s.Room,s.Room.Placed,proposed);
             var stats=Validation.Evaluate(s.Project,s.Room,proposed);
             if(stats.Checks["geometry"]==CheckState.Fail || stats.Checks["boundary"]==CheckState.Fail)
                 if(CadGeometry.Keyword(s.Document.Editor,"最终位置未通过几何/净距检查，保留为明显未通过草案","Keep Cancel","Cancel")!="Keep")throw new Cancelled();

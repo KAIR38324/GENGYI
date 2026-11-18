@@ -1,9 +1,9 @@
 {
-  "version": "0.4.0",
-  "source_base_commit": "46a5b44a45c2f9966d7d564f2ea6063622e34a5f",
+  "version": "0.4.1",
+  "source_base_commit": "cd4be0f0b9cab59a691655315a07ffc5a1a72edc",
   "target": "AutoCAD 2024 Windows x64 .NET Framework 4.8",
   "python_reference_tests": 16,
-  "core_checks": 148,
+  "core_checks": 162,
   "json_schema_export_modes": [
     "shoe",
     "first_change",
@@ -37,5 +37,6 @@
     "locker_people": 12
   },
   "source_dimension_guard": "old source depth 0/600 or legacy R600 remains unchanged but cannot certify 650; new bind records depth, rebuild names include geometry dimensions",
-  "drawing_labels": "at most two compact lines; type, people and essential levels; R650 one line"
+  "drawing_labels": "at most two compact lines; type, people and essential levels; R650 one line",
+  "first_change_aisle": ">=1100mm clear between cabinet fronts; shared by both banks, not doubled; back-to-back/side contacts exempt; same rule in previews, rectangular/polygon generation, edits and commit; native changes flagged and involved capacity excluded"
 }
