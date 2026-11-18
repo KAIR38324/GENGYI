@@ -64,29 +64,42 @@ namespace Gengyi.Core
         public double CurveToleranceMm { get; set; }
     }
 
+    public enum DoorSide { Shared, Dirty, Clean }
+
+    public sealed class DoorOpening
+    {
+        public V2 Start { get; set; } = new V2();
+        public V2 End { get; set; } = new V2();
+        public DoorSide Side { get; set; }
+    }
+
     public sealed class Population
     {
-        public int Registered { get; set; } = 600;
-        public int Shift { get; set; } = 300;
+        public const decimal DesignFactor = 1.1m;
+        public int ShiftCount { get; set; } = 2;
+        public int PeoplePerShift { get; set; } = 300;
         public decimal MaleRatio { get; set; } = .5m;
-        public decimal Reserve { get; set; }
+        // Retained for opening and auditing v1/v2 drawings.
+        public int? Registered { get; set; }
+        public int? Shift { get; set; }
+        public decimal? Reserve { get; set; }
         public void Validate()
         {
-            if (Registered < 0 || Registered > 10000 || Shift < 0 || Shift > Registered)
-                throw new ArgumentException("在册人数须为 0–10000，当班人数须在 0 与在册人数之间。");
-            if (MaleRatio < 0 || MaleRatio > 1 || Reserve < 0 || Reserve > 1)
-                throw new ArgumentException("男女比例与备用率须在 0–100% 之间。");
+            if (ShiftCount != 1 && ShiftCount != 2 || PeoplePerShift < 0 || PeoplePerShift > 10000)
+                throw new ArgumentException("请选择单班或双班，每班人数须在 0–10000 之间。");
+            if (MaleRatio < 0 || MaleRatio > 1) throw new ArgumentException("男性比例须在 0–100% 之间。");
         }
-        public int For(Room room)
+        public int BaseFor(Room room)
         {
             Validate();
-            if (room.CustomPeople < 0 || room.CustomPeople > 10000) throw new ArgumentException("自定义房间人数须在 0–10000 之间。");
-            if(room.ReserveOverride < 0 || room.ReserveOverride > 1)throw new ArgumentException("房间独立备用率须在 0–100% 之间。");
-            int total = room.Mode == RoomMode.SecondChange ? Shift : Registered;
+            if (room.CustomPeople < 0 || room.CustomPeople > 10000) throw new ArgumentException("自定义房间每班人数须在 0–10000 之间。");
+            int shifts = room.Mode == RoomMode.SecondChange ? 1 : ShiftCount;
+            if (room.CustomPeople.HasValue) return room.CustomPeople.Value * shifts;
+            int total = PeoplePerShift * shifts;
             int male = (int)Math.Floor(total * MaleRatio + .5m);
-            int people = room.Gender == "male" ? male : room.Gender == "female" ? total - male : total;
-            return (int)Math.Ceiling((room.CustomPeople ?? people) * (1 + (room.ReserveOverride??Reserve)));
+            return room.Gender == "male" ? male : room.Gender == "female" ? total - male : total;
         }
+        public int For(Room room) => (int)Math.Ceiling(BaseFor(room) * DesignFactor);
     }
 
     public sealed class LayoutOptions
@@ -269,6 +282,9 @@ namespace Gengyi.Core
     public sealed class Candidate
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        [JsonIgnore] internal int ShoeClosureContacts { get; set; }
+        public bool AppendToPlaced { get; set; }
+        public IReadOnlyList<Placement> Scene(Room room) => AppendToPlaced?room.Placed.Concat(Items).ToList():Items;
         public string Family { get; set; } = "";
         public List<Placement> Items { get; set; } = new List<Placement>();
         public Statistics Statistics { get; set; } = new Statistics();
@@ -284,9 +300,12 @@ namespace Gengyi.Core
         public string Gender { get; set; } = "shared";
         public RoomMode Mode { get; set; }
         public int? CustomPeople { get; set; }
+        public int? LegacyCustomPeople { get; set; }
         public decimal? ReserveOverride { get; set; }
         public Boundary? Boundary { get; set; }
         public List<Region> Obstacles { get; set; } = new List<Region>();
+        public List<DoorOpening> Doors { get; set; } = new List<DoorOpening>();
+        public List<Region> Passages { get; set; } = new List<Region>();
         public List<Region> Closures { get; set; } = new List<Region>();
         public V2? DirtySeed { get; set; }
         public V2? CleanSeed { get; set; }
@@ -294,16 +313,20 @@ namespace Gengyi.Core
         public List<Candidate> Candidates { get; set; } = new List<Candidate>();
         public int SelectedCandidate { get; set; }
         public List<Placement> Placed { get; set; } = new List<Placement>();
-        public bool PreviewVisible { get; set; }
+        [JsonIgnore] public bool PreviewVisible { get; set; }
         public bool Stale { get; set; }
         public string ConstraintIssue { get; set; } = "";
         public List<string> AnnotationHandles { get; set; } = new List<string>();
         public Statistics Statistics { get; set; } = new Statistics();
+        public void InvalidateCandidates()
+        {
+            Candidates.Clear();SelectedCandidate=0;PreviewVisible=false;Stale=true;
+        }
     }
 
     public sealed class Project
     {
-        public const string CurrentSchemaVersion="2.0";
+        public const string CurrentSchemaVersion="3.0";
         public string SchemaVersion { get; set; } = CurrentSchemaVersion;
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public Population Population { get; set; } = new Population();
@@ -313,7 +336,23 @@ namespace Gengyi.Core
         [JsonIgnore] public Room Current => Rooms.Single(r => r.Id == CurrentRoomId);
         public void UpgradeSchema()
         {
-            if(SchemaVersion!="1.0" && SchemaVersion!=CurrentSchemaVersion)throw new ArgumentException("不支持的项目数据版本。");
+            if(SchemaVersion==CurrentSchemaVersion)return;
+            if(SchemaVersion!="1.0" && SchemaVersion!="2.0")throw new ArgumentException("不支持的项目数据版本。");
+            int shift=Population.Shift??300, registered=Population.Registered??600;
+            Population.Shift=shift;Population.Registered=registered;Population.Reserve=Population.Reserve??0;
+            Population.PeoplePerShift=shift;
+            Population.ShiftCount=shift>0 && registered*2L>=shift*3L?2:1;
+            foreach(var room in Rooms)
+            {
+                // Legacy custom values were totals for storage rooms. Retain them for review.
+                if(room.CustomPeople.HasValue)
+                {
+                    room.LegacyCustomPeople=room.CustomPeople;
+                    if(room.Mode!=RoomMode.SecondChange)
+                        room.CustomPeople=(room.CustomPeople.Value+Population.ShiftCount-1)/Population.ShiftCount;
+                }
+                room.InvalidateCandidates();
+            }
             SchemaVersion=CurrentSchemaVersion;
         }
         public static Project Create()
@@ -331,8 +370,10 @@ namespace Gengyi.Core
         public void ChangePopulation(Population population)
         {
             population.Validate();
-            foreach (Room room in Rooms)
-                if (Population.For(room) != population.For(room)) room.Stale = true;
+            if (Population.ShiftCount != population.ShiftCount || Population.PeoplePerShift != population.PeoplePerShift ||
+                Population.MaleRatio != population.MaleRatio)
+                foreach (Room room in Rooms) room.InvalidateCandidates();
+            population.Registered=Population.Registered;population.Shift=Population.Shift;population.Reserve=Population.Reserve;
             Population = population;
         }
     }

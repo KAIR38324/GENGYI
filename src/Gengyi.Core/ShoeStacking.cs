@@ -99,7 +99,7 @@ namespace Gengyi.Core
             if(nominal>=target)return stacked;
             var neighbours=new Neighbours(items);
             for(int i=items.Count-1;i>=0 && nominal<target;i--)
-                if(items[i].EquipmentId=="S24" && neighbours.CanStack(i))
+                if(items[i].EquipmentId=="S24" && !items[i].Locked && neighbours.CanStack(i))
                 {
                     items[i].EquipmentId="S48";items[i].CrossingEnabled=false;nominal+=24;stacked++;
                 }

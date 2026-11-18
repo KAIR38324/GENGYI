@@ -19,14 +19,15 @@ namespace Gengyi.Cad.AutoCAD2024
         private readonly Task<SearchResult> task;
         private readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer{Interval=60};
         internal bool Cancelled;
-        internal SearchDialog(Project project,Room room)
+        internal SearchDialog(Project project,Room room,bool supplement)
         {
-            Text="生成更衣布置候选";Size=new Size(390,150);FormBorderStyle=FormBorderStyle.FixedDialog;
+            Text=supplement?"计算一更补排候选":"生成更衣布置候选";Size=new Size(390,150);FormBorderStyle=FormBorderStyle.FixedDialog;
             StartPosition=FormStartPosition.CenterParent;MaximizeBox=false;MinimizeBox=false;
             Controls.Add(new Label{Text="计算当前房间的不同方案与几何检查…",AutoSize=true,Location=new Point(18,20)});
             var cancel=new Button{Text="取消",Location=new Point(270,65)};
             cancel.Click+=(_,__)=>{Cancelled=true;cancellation.Cancel();cancel.Enabled=false;cancel.Text="正在取消";};Controls.Add(cancel);
-            task=Task.Run(()=>Gengyi.Core.Layout.Generate(project,room,cancellation.Token),cancellation.Token);
+            task=Task.Run(()=>supplement?Gengyi.Core.Layout.SupplementLockers(project,room,cancellation.Token):
+                Gengyi.Core.Layout.Generate(project,room,cancellation.Token),cancellation.Token);
             timer.Tick+=(_,__)=>{if(task.IsCompleted){timer.Stop();DialogResult=Cancelled?DialogResult.Cancel:DialogResult.OK;Close();}};
             FormClosing+=(_,e)=>{if(!task.IsCompleted){e.Cancel=true;Cancelled=true;cancellation.Cancel();}};
             timer.Start();
@@ -43,11 +44,12 @@ namespace Gengyi.Cad.AutoCAD2024
         private readonly UserControl surface=new UserControl{Dock=DockStyle.Fill,BackColor=Background};
         private readonly TabControl tabs=new TabControl{Dock=DockStyle.Fill,Padding=new Point(12,7)};
         private readonly ComboBox rooms=new ComboBox{Dock=DockStyle.Fill,DropDownStyle=ComboBoxStyle.DropDownList,Height=30};
-        private readonly NumericUpDown registered=Number(10000,600),shift=Number(10000,300),male=Number(100,50),reserve=Number(100,0);
-        private readonly NumericUpDown aisle=Number(10000,1000),margin=Number(10000,1000),operation=Number(10000,0),rear=Number(1000,0),maxSegment=Number(50000,3000);
+        private readonly ComboBox shiftCount=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList};
+        private readonly NumericUpDown shift=Number(10000,300),male=Number(100,50);
+        private readonly NumericUpDown aisle=Number(10000,1000,100),margin=Number(10000,1000),operation=Number(10000,0),rear=Number(1000,0),maxSegment=Number(50000,3000);
         private readonly NumericUpDown pitch=Number(10000,100),startMargin=Number(10000,50),endMargin=Number(10000,50),elevation=Number(20000,0);
-        private readonly NumericUpDown walkWidth=Number(2000,600),segmentGap=Number(10000,100),customPeople=Number(10000,0),roomReserve=Number(100,0);
-        private readonly CheckBox reserveOverride=Check("本房间使用独立备用率"),orth=Check("沿房间方向正交拖动、旋转");
+        private readonly NumericUpDown walkWidth=Number(2000,600),segmentGap=Number(10000,100),customPeople=Number(10000,0);
+        private readonly CheckBox orth=Check("沿房间方向正交拖动、旋转");
         private readonly RadioButton noStack=new RadioButton{Text="不叠放 · 全部使用单柜",AutoSize=true,ForeColor=Ink,Margin=new Padding(0,4,0,6)};
         private readonly RadioButton stack=new RadioButton{Text="允许叠放 · 按24—48—24交错",AutoSize=true,ForeColor=Ink,Margin=new Padding(0,4,0,6)};
         private readonly CheckBox actionsVerified=Check("已实际核对柜门、更衣动作和操作深度"),installationVerified=Check("已实际核对吊挂标高、支撑及衣物占用");
@@ -58,8 +60,8 @@ namespace Gengyi.Cad.AutoCAD2024
         private readonly ListBox candidates=new ListBox{Height=154,DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=50,BorderStyle=BorderStyle.FixedSingle,IntegralHeight=false};
         private readonly TextBox statistics=new TextBox{Height=260,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical,BorderStyle=BorderStyle.FixedSingle,BackColor=Color.White};
         private readonly Label areaSummary=Text("正在计算尺寸建议…",true),areaDetail=Text(""),assumptions=Text(""),boundaryInfo=Text("尚未确定房间范围"),sourceInfo=Text(""),candidateDetail=Text(""),footerTitle=Text("先选房间，输入人数",true),footerDetail=Text("面积建议会在定框前显示");
-        private readonly Label pendingInfo=Text("修改人数会立即更新面积建议；操作前自动保存参数。"),stackingStatus=Text(""),planningPreviewStatus=Text(""),workflowHint=Text(""),inputError=Text("");
-        private readonly Button nextStep,planPreview,suggested,manualRectangle,existingRectangle,generate,commit,check,preview,cancel,obstacles,seeds,closures,rebuild,bind;
+        private readonly Label pendingInfo=Text("修改人数会立即更新面积建议；操作前自动保存参数。"),stackingStatus=Text(""),planningPreviewStatus=Text(""),workflowHint=Text(""),inputError=Text(""),legacyPeople=Text(""),accessInfo=Text("");
+        private readonly Button nextStep,planPreview,suggested,manualRectangle,existingRectangle,generate,fill,track,commit,check,preview,cancel,obstacles,doors,passages,closures,rebuild,bind;
         private readonly TableLayoutPanel stackingSettings,shoeSettings,hangerSettings;
         private readonly TableLayoutPanel sizingSection,boundarySection,schemeSection;
         private readonly TabPage workflowPage;
@@ -76,7 +78,7 @@ namespace Gengyi.Cad.AutoCAD2024
         private Session? lastSession;
         private Preview? observedPlanningPreview;
         private long observedPlanningRevision;
-        private static NumericUpDown Number(int max,int value)=>new NumericUpDown{Maximum=max,Minimum=0,Value=value,Dock=DockStyle.Fill,Height=28,ThousandsSeparator=true};
+        private static NumericUpDown Number(int max,int value,int min=0)=>new NumericUpDown{Maximum=max,Minimum=min,Value=value,Dock=DockStyle.Fill,Height=28,ThousandsSeparator=true};
         private static CheckBox Check(string text)=>new CheckBox{Text=text,AutoSize=true,ForeColor=Ink,Margin=new Padding(0,4,0,6)};
         private static Label Text(string text,bool strong=false)=>new Label{Text=text,AutoSize=true,ForeColor=strong?Ink:Muted,Margin=new Padding(0,0,0,6),Dock=DockStyle.Fill};
 
@@ -95,9 +97,12 @@ namespace Gengyi.Cad.AutoCAD2024
             var work=Page("布置");var edit=Page("设备与图块");var settings=Page("高级参数");
             workflowPage=(TabPage)work.Parent;
 
-            var people=Card(work,"1  人数","鞋位和一更按在册人数；二更按当班人数。",boldFont);
-            NumberRow(people,"在册人数",registered,"当班人数",shift);NumberRow(people,"男性比例 %",male,"项目备用 %",reserve);
-            customRow=NumberRow(people,"当前自定义房人数",customPeople);Add(people,pendingInfo);inputError.ForeColor=Color.Firebrick;Add(people,inputError);
+            var people=Card(work,"1  班次与人数","换鞋间和一更按所选班次合计，二更按一班周转。各房间按基础人数 × 1.1 向上取整。",boldFont);
+            shiftCount.Items.AddRange(new object[]{"单班","双班"});shiftCount.SelectedIndex=1;
+            Add(people,Text("班次"));Add(people,shiftCount);
+            NumberRow(people,"每班人数",shift,"男性比例 %",male);
+            customRow=NumberRow(people,"当前自定义房每班人数",customPeople);
+            Add(people,legacyPeople);Add(people,pendingInfo);inputError.ForeColor=Color.Firebrick;Add(people,inputError);
             stackingSettings=Card(work,"2  是否允许叠放","先确定柜体形式，再预览设备和参考占地。",boldFont);
             Add(stackingSettings,noStack);Add(stackingSettings,stack);
             Add(stackingSettings,Text("48人双柜的两个相邻柜必须都是24人单柜；双柜自身不作为跨坐位置。"));Add(stackingSettings,stackingStatus);
@@ -115,14 +120,21 @@ namespace Gengyi.Cad.AutoCAD2024
             suggested=ActionButton("使用参考矩形",StartSuggested);ButtonRow(boundaryCard,manualRectangle,suggested);
             tips.SetToolTip(existingRectangle,"先完成当前人数和叠放设置的预览，再在 CAD 中点选自己的闭合边界。凹形、不规则轮廓按真实面积与形状计算。");
             boundaryInfo.BackColor=Color.FromArgb(245,247,251);boundaryInfo.Padding=new Padding(8);Add(boundaryCard,boundaryInfo);Add(boundaryCard,boundarySketch);
-            obstacles=CommandButton("门口 / 障碍", "GYOBSTACLES");seeds=CommandButton("入口 / 出口", "GYSEEDS");closures=CommandButton("实际封闭物", "GYCLOSURES");ButtonRow(boundaryCard,obstacles,seeds,closures);
-            tips.SetToolTip(obstacles,"选择门扇、门口、柱和不可占区的实际闭合轮廓。不会从截图猜测门位。");
-            tips.SetToolTip(seeds,"在可行走位置点选入口。换鞋间需要分别点选脏侧入口和净侧出口。");
+            doors=CommandButton("设置出入口", "GYDOORS",true);passages=CommandButton("选通行保留区", "GYPASSAGES");
+            ButtonRow(boundaryCard,doors,passages);Add(boundaryCard,accessInfo);
+            obstacles=CommandButton("柱 / 实际障碍", "GYOBSTACLES");closures=CommandButton("实际封闭物", "GYCLOSURES");
+            ButtonRow(boundaryCard,obstacles,closures);
+            tips.SetToolTip(doors,"每个门在图上捕捉两个门边点。可连续选多个，也可追加、替换或清空。");
+            tips.SetToolTip(passages,"选择房间内的闭合多段线。保留区可通行，柜体不得占用。");
             tips.SetToolTip(closures,"仅选实际存在的隔板、墙或固定封闭轮廓，用于检查能否绕过鞋柜。");
 
             var schemes=Card(work,"5  在实际边界内生成、调整、入图","先完成设置预览并选择边界，再比较实际布置方案。",boldFont);
             schemeSection=schemes;
-            generate=CommandButton("生成布置方案", "GYGENERATE",true);Add(schemes,generate);Add(schemes,workflowHint);Add(schemes,candidates);Add(schemes,candidateDetail);
+            generate=CommandButton("生成布置方案","GYGENERATE",true);
+            track=CommandButton("沿轨迹布置","GYTRACK");ButtonRow(schemes,generate,track);
+            fill=CommandButton("一更自动补排","GYFILL");Add(schemes,fill);
+            tips.SetToolTip(fill,"保留已入图衣柜，根据几何可用量和剩余缺口寻找可追加的柜位。");
+            Add(schemes,workflowHint);Add(schemes,candidates);Add(schemes,candidateDetail);
             preview=CommandButton("显示所选方案", "GYPREVIEW");cancel=CommandButton("取消预览", "GYCANCEL");ButtonRow(schemes,preview,cancel);
             sourceInfo.Padding=new Padding(8);sourceInfo.BackColor=Color.FromArgb(255,246,226);Add(schemes,sourceInfo);
             rebuild=CommandButton("使用图片重建块（待比对）", "GYREBUILD");bind=CommandButton("绑定原 CAD 设备块", "GYBLOCK");Add(schemes,rebuild);Add(schemes,bind);
@@ -147,7 +159,6 @@ namespace Gengyi.Cad.AutoCAD2024
             var common=Card(settings,"本房间的空间参数","毫米。预排通道是规划假设，实际操作深度需按现场核对。",boldFont);
             NumberRow(common,"预排通道 mm",aisle,"人员净宽 mm",walkWidth);NumberRow(common,"实际操作深度 mm",operation,"柜后安装距 mm",rear);
             Add(common,Text("实际操作深度填 0 表示尚未核对。一更柜间通道至少1100 mm；两侧共用同一净距。"));Add(common,orth);Add(common,actionsVerified);
-            var roomPeople=Card(settings,"本房间备用人数","默认沿用项目备用率。勾选后只影响当前房间。",boldFont);Add(roomPeople,reserveOverride);NumberRow(roomPeople,"本房间备用率 %",roomReserve);
             shoeSettings=Card(settings,"换鞋柜参数","柜宽650 mm（含中间50 mm通风道），转角R650。S24每侧3层；S48每侧6层。",boldFont);
             NumberRow(shoeSettings,"鞋柜到边界 mm",margin);Add(shoeSettings,Text("允许的单柜型号（不会拉伸设备）："));
             foreach(string sku in new[]{"S12","S18","S24"})shoeTypes.Items.Add(sku,true);Add(shoeSettings,shoeTypes);
@@ -183,9 +194,10 @@ namespace Gengyi.Cad.AutoCAD2024
                 }
                 catch(System.Exception ex){ShowError(ex);}
             };
-            foreach(var n in new[]{registered,shift,male,reserve,aisle,margin,operation,rear,maxSegment,pitch,startMargin,endMargin,elevation,walkWidth,segmentGap,customPeople,roomReserve})
+            foreach(var n in new[]{shift,male,aisle,margin,operation,rear,maxSegment,pitch,startMargin,endMargin,elevation,walkWidth,segmentGap,customPeople})
                 n.ValueChanged+=(_,__)=>InputsChanged();
-            foreach(var c in new[]{reserveOverride,orth,actionsVerified,installationVerified})c.CheckedChanged+=(_,__)=>InputsChanged();
+            shiftCount.SelectedIndexChanged+=(_,__)=>InputsChanged();
+            foreach(var c in new[]{orth,actionsVerified,installationVerified})c.CheckedChanged+=(_,__)=>InputsChanged();
             noStack.CheckedChanged+=(_,__)=>{if(!updating && noStack.Checked){preferStackedOption=false;InputsChanged();}};
             stack.CheckedChanged+=(_,__)=>{if(!updating && stack.Checked){preferStackedOption=true;InputsChanged();}};
             shoeTypes.ItemCheck+=(_,__)=>
@@ -235,7 +247,7 @@ namespace Gengyi.Cad.AutoCAD2024
             var b=new Button{Text=text,Height=36,Dock=DockStyle.Fill,FlatStyle=FlatStyle.Flat,BackColor=primary?Blue:Color.FromArgb(245,247,251),ForeColor=primary?Color.White:Ink,Cursor=Cursors.Hand,Margin=new Padding(0,0,0,6),UseVisualStyleBackColor=false};
             b.FlatAppearance.BorderColor=primary?Blue:Color.FromArgb(213,221,233);b.Click+=(_,__)=>action();return b;
         }
-        private Population ReadPopulation()=>new Population{Registered=(int)registered.Value,Shift=(int)shift.Value,MaleRatio=male.Value/100,Reserve=reserve.Value/100};
+        private Population ReadPopulation()=>new Population{ShiftCount=shiftCount.SelectedIndex+1,PeoplePerShift=(int)shift.Value,MaleRatio=male.Value/100};
         private Room ReadPlanningRoom()
         {
             if(planningRoom==null)throw new ArgumentException("请先打开图纸并选择房间。");
@@ -245,13 +257,13 @@ namespace Gengyi.Cad.AutoCAD2024
             o.WalkWidthMm=(double)walkWidth.Value;o.HangerSegmentGapMm=(double)segmentGap.Value;o.InstallationElevationMm=elevation.Value==0?(double?)null:(double)elevation.Value;
             o.AllowStacking=stack.Checked;o.Orthogonal=orth.Checked;o.DoorAndOperationVerified=actionsVerified.Checked;o.InstallationVerified=installationVerified.Checked;
             o.ShoeCapacities=shoeTypes.CheckedItems.Cast<string>().Select(id=>int.Parse(id.Substring(1))).ToList();
-            r.ReserveOverride=reserveOverride.Checked?roomReserve.Value/100:(decimal?)null;if(r.Gender=="custom")r.CustomPeople=(int)customPeople.Value;
+            if(r.Gender=="custom")r.CustomPeople=(int)customPeople.Value;
             return r;
         }
-        private static Room CopyPlanningRoom(Room r)=>new Room{Id=r.Id,Name=r.Name,Mode=r.Mode,Gender=r.Gender,CustomPeople=r.CustomPeople,ReserveOverride=r.ReserveOverride,Options=Serialization.Copy(r.Options),Boundary=r.Boundary,PlanningPreviewSignature=r.PlanningPreviewSignature,PlanningPreviewOption=r.PlanningPreviewOption};
+        private static Room CopyPlanningRoom(Room r)=>new Room{Id=r.Id,Name=r.Name,Mode=r.Mode,Gender=r.Gender,CustomPeople=r.CustomPeople,Options=Serialization.Copy(r.Options),Boundary=r.Boundary,PlanningPreviewSignature=r.PlanningPreviewSignature,PlanningPreviewOption=r.PlanningPreviewOption};
         private void InputsChanged()
         {
-            if(updating)return;inputsDirty=true;roomReserve.Enabled=reserveOverride.Checked;pendingInfo.Text="人数 / 参数已修改，面积建议正在更新…";pendingInfo.ForeColor=Blue;
+            if(updating)return;inputsDirty=true;pendingInfo.Text="人数 / 参数已修改，面积建议正在更新…";pendingInfo.ForeColor=Blue;
             estimateTimer.Stop();estimateTimer.Start();
         }
         private void RefreshEstimate()
@@ -281,7 +293,7 @@ namespace Gengyi.Cad.AutoCAD2024
             catch(System.Exception ex)
             {
                 estimate=null;planningPreviewCurrent=false;rectangleChoices.Items.Clear();sketch.ShowPlan(null);areaSummary.Text="请先修正人数或参数";areaDetail.Text="";inputError.Text=ex.Message;
-                planPreview.Enabled=suggested.Enabled=manualRectangle.Enabled=existingRectangle.Enabled=generate.Enabled=nextStep.Enabled=preview.Enabled=commit.Enabled=false;
+                planPreview.Enabled=suggested.Enabled=manualRectangle.Enabled=existingRectangle.Enabled=generate.Enabled=fill.Enabled=track.Enabled=nextStep.Enabled=preview.Enabled=commit.Enabled=false;
             }
         }
         private void ShowSelectedEstimate()
@@ -300,10 +312,15 @@ namespace Gengyi.Cad.AutoCAD2024
             existingRectangle.Enabled=manualRectangle.Enabled=s!=null && planningPreviewCurrent;
             suggested.Enabled=s!=null && planningPreviewCurrent && hasOptions;
             generate.Enabled=s?.Room.Boundary!=null && planningPreviewCurrent && s.Room.ConstraintIssue.Length==0;
-            preview.Enabled=s!=null && s.Room.Candidates.Count>0 && planningPreviewCurrent && !inputsDirty;
-            candidates.Enabled=planningPreviewCurrent && !inputsDirty;
-            commit.Enabled=candidateCanCommit && planningPreviewCurrent && !inputsDirty;
-            rebuild.Enabled=bind.Enabled=planningPreviewCurrent && !inputsDirty;
+            track.Enabled=s?.Room.Boundary!=null && s.Room.Mode!=RoomMode.SecondChange && s.Room.ConstraintIssue.Length==0;
+            fill.Visible=s?.Room.Mode==RoomMode.FirstChange;
+            fill.Enabled=fill.Visible && s?.Room.Boundary!=null && s.Room.Placed.Count>0 && s.Room.ConstraintIssue.Length==0;
+            bool appendDraft=(candidates.SelectedItem as Candidate)?.AppendToPlaced==true;
+            bool ready=planningPreviewCurrent || appendDraft;
+            preview.Enabled=s!=null && s.Room.Candidates.Count>0 && ready && !inputsDirty;
+            candidates.Enabled=ready && !inputsDirty;
+            commit.Enabled=candidateCanCommit && ready && !inputsDirty;
+            rebuild.Enabled=bind.Enabled=ready && !inputsDirty;
             planningPreviewStatus.Text=planningPreviewCurrent?(s?.Room.Boundary==null?"预览已完成 · 现在可以选择自己的房间边界。":"预览已完成 · 已选实际边界，可继续生成和调整。"):
                 "先点击上方预览；修改人数、叠放、参数或切换参考方案后，需要重新预览。";
             planningPreviewStatus.ForeColor=planningPreviewCurrent?Color.FromArgb(39,119,77):Blue;
@@ -311,7 +328,11 @@ namespace Gengyi.Cad.AutoCAD2024
             if(s==null)return;
             if(!planningPreviewCurrent){nextStep.Text="下一步 · 预览设备与参考尺寸";workflowHint.Text="先完成当前人数及叠放设置的预览，再选择实际边界。";return;}
             if(s.Room.Boundary==null){nextStep.Text="下一步 · 选择我的房间边界";workflowHint.Text="预览完成。请选择自己的闭合不规则边界或矩形。";return;}
-            if(s.Room.ConstraintIssue.Length>0){nextStep.Text="重新选择有效房间边界";workflowHint.Text=s.Room.ConstraintIssue;return;}
+            if(s.Room.ConstraintIssue.Length>0){nextStep.Text="修正房间边界或通行区";workflowHint.Text=s.Room.ConstraintIssue;return;}
+            if(s.Room.Doors.Count==0 && s.Room.Candidates.Count==0)
+            {
+                nextStep.Text="下一步 · 设置出入口";workflowHint.Text="在墙上选一个或多个出入口，也可补选通行保留区。";return;
+            }
             workflowHint.Text=s.Room.Stale?"边界或现场条件已变化，请重新生成或检查方案。":"在真实边界内生成布置，点选方案即可预览并调整。";
             nextStep.Text=s.Room.Stale || s.Room.Candidates.Count==0?"下一步 · 在实际边界内生成方案":
                 !s.Room.PreviewVisible?(s.Room.Placed.Count>0?"检查已入图设备":"下一步 · 预览所选方案"):
@@ -323,10 +344,12 @@ namespace Gengyi.Cad.AutoCAD2024
             if(boundDocument!=null && doc!=boundDocument){Update(Host.Active);return false;}
             if(doc.CommandInProgress.Length>0){doc.Editor.WriteMessage("\n请先完成或取消当前 CAD 命令。");return false;}
             if(!ApplyInputs())return false;
+            if(command=="GYFILL" && !fill.Enabled)return false;
             if(command=="GYGENERATE" || command=="GYPREVIEW" || command=="GYCOMMIT")
             {
                 RefreshEstimate();
-                if(!planningPreviewCurrent){StartPlanningPreview();return false;}
+                if(!planningPreviewCurrent && (command=="GYGENERATE" || (candidates.SelectedItem as Candidate)?.AppendToPlaced!=true))
+                {StartPlanningPreview();return false;}
                 if(command=="GYGENERATE" && !generate.Enabled)return false;
                 if(command=="GYCOMMIT" && !commit.Enabled)return false;
             }
@@ -355,7 +378,8 @@ namespace Gengyi.Cad.AutoCAD2024
             if(!ApplyInputs())return;RefreshEstimate();var s=lastSession;if(s==null)return;
             if(!planningPreviewCurrent){StartPlanningPreview();return;}
             if(s.Room.Boundary==null){Queue("GYRECT Select");return;}
-            if(s.Room.ConstraintIssue.Length>0){Queue("GYRECT Select");return;}
+            if(s.Room.ConstraintIssue.Length>0){Queue(s.Room.ConstraintIssue.StartsWith("通行保留区",StringComparison.Ordinal)?"GYPASSAGES":"GYRECT Select");return;}
+            if(s.Room.Doors.Count==0 && s.Room.Candidates.Count==0){Queue("GYDOORS");return;}
             if(s.Room.Stale || s.Room.Candidates.Count==0){Queue("GYGENERATE");return;}
             var selected=s.Room.Candidates[Math.Max(0,Math.Min(s.Room.SelectedCandidate,s.Room.Candidates.Count-1))];
             if(!s.Room.PreviewVisible){Queue(s.Room.Placed.Count>0?"GYCHECK":"GYPREVIEW");return;}
@@ -390,7 +414,15 @@ namespace Gengyi.Cad.AutoCAD2024
                 if(s.Document.CommandInProgress.Length>0)throw new ArgumentException("请先完成当前 CAD 命令。");
                 using(s.Document.LockDocument())
                 {
-                    s.Refresh();s.Edit(_=>{s.Project.ChangePopulation(p);s.Room.Options=draft.Options;s.Room.ReserveOverride=draft.ReserveOverride;if(s.Room.Gender=="custom")s.Room.CustomPeople=draft.CustomPeople;s.Room.Stale=true;});s.Refresh();
+                    s.Refresh();
+                    s.Edit(_=>
+                    {
+                        bool optionsChanged=AreaPlanning.Signature(p,s.Room)!=AreaPlanning.Signature(p,draft);
+                        s.Project.ChangePopulation(p);s.Room.Options=draft.Options;
+                        if(s.Room.Gender=="custom")s.Room.CustomPeople=draft.CustomPeople;
+                        if(optionsChanged)s.Room.InvalidateCandidates();
+                    });
+                    s.Refresh();s.ShowRoomPreview();
                 }
                 inputsDirty=false;Update(s);return true;
             }
@@ -425,17 +457,22 @@ namespace Gengyi.Cad.AutoCAD2024
                 string signature=string.Join(";",s.Project.Rooms.Select(r=>r.Id+":"+r.Name));
                 if(signature!=roomList){rooms.Items.Clear();foreach(var room in s.Project.Rooms)rooms.Items.Add(new RoomChoice(room.Id,room.Name));roomList=signature;}
                 rooms.SelectedIndex=s.Project.Rooms.FindIndex(r=>r.Id==s.Project.CurrentRoomId);
-                aisle.Minimum=s.Room.Mode==RoomMode.FirstChange?(decimal)LockerAisles.MinimumMm:100;
                 if(!preserveInputs)
                 {
-                    inputsDirty=false;Set(registered,s.Project.Population.Registered);Set(shift,s.Project.Population.Shift);Set(male,s.Project.Population.MaleRatio*100);Set(reserve,s.Project.Population.Reserve*100);
-                    Set(customPeople,s.Room.CustomPeople??0);Set(roomReserve,(s.Room.ReserveOverride??s.Project.Population.Reserve)*100);reserveOverride.Checked=s.Room.ReserveOverride.HasValue;
+                    inputsDirty=false;shiftCount.SelectedIndex=s.Project.Population.ShiftCount-1;
+                    Set(shift,s.Project.Population.PeoplePerShift);Set(male,s.Project.Population.MaleRatio*100);
+                    Set(customPeople,s.Room.CustomPeople??0);
                     var o=s.Room.Options;Set(aisle,(decimal)o.PlanningAisleMm);Set(margin,(decimal)o.ShoeBoundaryMm);Set(operation,(decimal)(o.OperationDepthMm??0));Set(rear,(decimal)o.RearGapMm);
                     Set(maxSegment,(decimal)o.HangerMaxSegmentMm);Set(pitch,o.HookPitchMm);Set(startMargin,o.HookStartMarginMm);Set(endMargin,o.HookEndMarginMm);Set(elevation,(decimal)(o.InstallationElevationMm??0));
                     Set(walkWidth,(decimal)o.WalkWidthMm);Set(segmentGap,(decimal)o.HangerSegmentGapMm);stack.Checked=o.AllowStacking;noStack.Checked=!o.AllowStacking;orth.Checked=o.Orthogonal;actionsVerified.Checked=o.DoorAndOperationVerified;installationVerified.Checked=o.InstallationVerified;
                     for(int i=0;i<shoeTypes.Items.Count;i++)shoeTypes.SetItemChecked(i,o.ShoeCapacities.Contains(int.Parse(((string)shoeTypes.Items[i]).Substring(1))));
                 }
-                customRow.Visible=s.Room.Gender=="custom";customPeople.Enabled=s.Room.Gender=="custom";roomReserve.Enabled=reserveOverride.Checked;
+                customRow.Visible=s.Room.Gender=="custom";customPeople.Enabled=s.Room.Gender=="custom";
+                var population=s.Project.Population;
+                legacyPeople.Visible=population.Registered.HasValue;
+                legacyPeople.Text=$"旧图记录：在册 {population.Registered}，当班 {population.Shift}，备用 {population.Reserve*100:0.##}%。已按旧当班数推算班次，请核对上方输入。";
+                if(s.Room.LegacyCustomPeople.HasValue)legacyPeople.Text+=$" 旧自定义人数 {s.Room.LegacyCustomPeople}。";
+                if(s.Room.ReserveOverride.HasValue)legacyPeople.Text+=$" 旧房间备用率 {s.Room.ReserveOverride*100:0.##}%。";
                 stackingSettings.Visible=shoeSettings.Visible=s.Room.Mode==RoomMode.Shoe;hangerSettings.Visible=s.Room.Mode==RoomMode.SecondChange;
                 int areaStep=s.Room.Mode==RoomMode.Shoe?3:2;
                 ((Label)sizingSection.GetControlFromPosition(0,0)).Text=areaStep+"  预览面积、设备与尺寸";
@@ -448,13 +485,19 @@ namespace Gengyi.Cad.AutoCAD2024
                 boundarySketch.Visible=boundary!=null;boundarySketch.ShowBoundary(boundary);
                 if(s.Room.Placed.Count>0)boundaryInfo.Text+="\r\n可重新选择边界；现有设备保持原位，随后重新校核。";
                 if(s.Room.ConstraintIssue.Length>0)boundaryInfo.Text+="\r\n"+s.Room.ConstraintIssue;
-                obstacles.Enabled=seeds.Enabled=closures.Enabled=boundary!=null;closures.Visible=s.Room.Mode==RoomMode.Shoe;
+                obstacles.Enabled=doors.Enabled=passages.Enabled=closures.Enabled=boundary!=null;closures.Visible=s.Room.Mode==RoomMode.Shoe;
+                accessInfo.Visible=boundary!=null;
+                accessInfo.Text=$"已选 {s.Room.Doors.Count} 个出入口 · {s.Room.Passages.Count} 个通行保留区";
+                if(s.Room.Mode==RoomMode.Shoe && s.Room.Doors.Count>0)
+                    accessInfo.Text+=$"（脏侧 {s.Room.Doors.Count(d=>d.Side==DoorSide.Dirty)} / 净侧 {s.Room.Doors.Count(d=>d.Side==DoorSide.Clean)}）";
+                var accessIssue=s.Room.Statistics.Issues.FirstOrDefault(i=>i.Code=="DOOR_INVALID" || i.Code=="PASSAGE_INVALID");
+                if(accessIssue!=null)accessInfo.Text+="\r\n"+accessIssue.Message;
                 string cs=string.Join(";",s.Room.Candidates.Select(c=>c.Id+":"+c.Family+":"+c.Statistics.Summary));
                 string ids=string.Join(";",s.Room.Candidates.Select(c=>c.Id));bool newSchemes=sameContext && ids.Length>0 && ids!=candidateIds;candidateIds=ids;
                 if(candidateSignature!=boundRoomId+cs){candidates.Items.Clear();foreach(var c in s.Room.Candidates)candidates.Items.Add(c);candidateSignature=boundRoomId+cs;}
                 if(s.Room.Candidates.Count>0)candidates.SelectedIndex=Math.Max(0,Math.Min(s.Room.SelectedCandidate,s.Room.Candidates.Count-1));
-                var selected=candidates.SelectedItem as Candidate;bool hasCandidate=selected!=null;
-                preview.Enabled=commit.Enabled=hasCandidate;cancel.Enabled=s.Room.PreviewVisible;check.Enabled=boundary!=null;
+                var selected=s.Room.Candidates.Count==0?null:s.Room.Candidates[s.Room.SelectedCandidate];bool hasCandidate=selected!=null;
+                preview.Enabled=commit.Enabled=hasCandidate;cancel.Enabled=s.Preview.HasGraphics || s.Room.PreviewVisible;check.Enabled=boundary!=null;
                 if(selected!=null)
                 {
                     string counts=string.Join(" · ",selected.Items.GroupBy(i=>i.EquipmentId).Select(g=>EquipmentPresentation.Describe(g.First(),s.Room.Options).Title+" × "+g.Count()));
@@ -472,12 +515,26 @@ namespace Gengyi.Cad.AutoCAD2024
                     bool badLockerAisle=selected.Statistics.Checks.TryGetValue(LockerAisles.CheckKey,out var lockerAisleState) && lockerAisleState==CheckState.Fail;
                     if(badStacking)candidateDetail.Text+="\r\n交错规则未满足：每个48人柜的两端都须相接24人单柜。";
                     if(badLockerAisle)candidateDetail.Text+="\r\n一更衣柜间通道净距不足1100 mm，请调整柜排。";
-                    candidateCanCommit=missing==0 && !badGeometry && !badBoundary && !badStacking && !badLockerAisle;
+                    bool badAccess=RoomAccess.Failed(selected.Statistics);
+                    if(badAccess)candidateDetail.Text+="\r\n有出入口或通行保留区未通过校核。";
+                    bool losesExisting=s.Room.Mode==RoomMode.FirstChange && selected.AppendToPlaced &&
+                        !LockerAisles.PreservesCapacity(s.Room.Statistics,selected.Statistics);
+                    if(losesExisting)candidateDetail.Text+="\r\n追加后已有衣柜的可用人位减少，请调整。";
+                    candidateCanCommit=selected.Items.Count>0 && missing==0 && !badGeometry && !badBoundary &&
+                        !badStacking && !badLockerAisle && !badAccess && !losesExisting;
                     tips.SetToolTip(commit,badStacking?"每个48人柜两端必须是相接的24人单柜，先修正交错布置。":badLockerAisle?"一更两侧衣柜之间需留至少1100 mm净空。":missing>0?"先接入设备图块，才能确认入图。":badGeometry || badBoundary?"先修正碰撞、尺寸或边距问题。":"待核条件会在入图时要求明确作为草案确认。");
                 }
-                else{candidateCanCommit=false;candidateDetail.Text="尚无方案。预览并选择实际边界后，点击“生成布置方案”。";sourceInfo.Visible=false;rebuild.Visible=bind.Visible=false;}
+                else
+                {
+                    candidateCanCommit=false;
+                    candidateDetail.Text=s.Room.Mode==RoomMode.Shoe && boundary!=null && !s.Room.Stale
+                        ?"未找到完整 S 形方案。请核对房间边界、门位和柜间净距。"
+                        :"尚无方案。选择实际边界后，点击“生成布置方案”。";
+                    sourceInfo.Visible=false;rebuild.Visible=bind.Visible=false;
+                }
                 var stats=s.Room.PreviewVisible && selected!=null?selected.Statistics:s.Room.Statistics;
-                SetStatistics(stats,s.Room.PreviewVisible?"所选方案预览":"已入图设备");
+                if(s.Room.PreviewVisible && selected?.AppendToPlaced==true)SetAppendStatistics(s.Room,selected,"追加预览");
+                else SetStatistics(stats,s.Room.PreviewVisible?"所选方案预览":"已入图设备");
                 RefreshEstimate();
                 observedPlanningPreview=s.Preview;observedPlanningRevision=s.Preview.PlanningRevision;
                 bool newlyPlanned=sameContext && planningPreviewCurrent && (completedPlanningDisplay || !wasPlanningPreviewCurrent || previousPlanningSignature!=s.Room.PlanningPreviewSignature || previousPlanningOption!=s.Room.PlanningPreviewOption);
@@ -497,6 +554,28 @@ namespace Gengyi.Cad.AutoCAD2024
             TextRenderer.DrawText(e.Graphics,detail,surface.Font,new Rectangle(e.Bounds.X+8,e.Bounds.Y+27,e.Bounds.Width-16,19),Muted,TextFormatFlags.EndEllipsis|TextFormatFlags.NoPadding);
             e.DrawFocusRectangle();
         }
+        internal void SetAppendStatistics(Room room,Candidate candidate,string note)
+        {
+            var placed=room.Statistics;
+            var combined=candidate.Statistics;
+            int estimate=candidate.Items.Sum(item=>combined.GeometricByInstance.TryGetValue(item.Id,out int n)?n:0);
+            footerTitle.Text=$"目标 {combined.Target} · 已入图 {placed.Nominal} · 现有几何可用 {placed.GeometricAvailable}";
+            footerDetail.Text=$"目前还差 {placed.ConditionalDeficit} 位 · 本次预计 +{estimate} 位 · 预计还差 {combined.ConditionalDeficit} 位";
+            if(room.Mode==RoomMode.Shoe)
+            {
+                int increment=candidate.Items.Count(item=>item.EquipmentId=="S48")*24;
+                int nominal=candidate.Items.Sum(item=>item.Equipment.Capacity);
+                footerDetail.Text+=$"\r\n轨迹名义单层 {nominal-increment} 位 · 叠放 +{increment} 位";
+            }
+            bool conflict=RoomAccess.Failed(combined) || combined.Checks["geometry"]==CheckState.Fail ||
+                combined.Checks["boundary"]==CheckState.Fail || combined.Checks[LockerAisles.CheckKey]==CheckState.Fail;
+            if(conflict)note=combined.Issues.FirstOrDefault()?.Message??"请调整红色设备的位置。";
+            else if(room.Mode==RoomMode.FirstChange && !LockerAisles.PreservesCapacity(placed,combined))
+            {conflict=true;note="已有衣柜的可用人位会减少，请调整。";}
+            if(note.Length>0)footerDetail.Text+="\r\n"+note;
+            footerDetail.ForeColor=conflict?Color.Firebrick:Muted;
+            statistics.Text=footerTitle.Text+"\r\n"+footerDetail.Text;
+        }
         internal void SetStatistics(Statistics stats,string prefix="拖动预检")
         {
             footerTitle.Text=$"目标 {stats.Target}  ·  名义 {stats.Nominal}  ·  有效 {(stats.Effective.HasValue?stats.Effective.Value.ToString():"待核")}";
@@ -505,7 +584,9 @@ namespace Gengyi.Cad.AutoCAD2024
             bool badLockerAisle=stats.Checks.TryGetValue(LockerAisles.CheckKey,out var lockerAisleState) && lockerAisleState==CheckState.Fail;
             if(badStacking)footerDetail.Text+="\r\n48人柜两邻24人柜：未通过，请修正24—48—24布置。";
             if(badLockerAisle)footerDetail.Text+="\r\n一更柜间通道：不足1100 mm，请调整柜排。";
-            footerDetail.ForeColor=badStacking || badLockerAisle?Color.Firebrick:Muted;
+            bool badAccess=RoomAccess.Failed(stats);
+            if(badAccess)footerDetail.Text+="\r\n出入口或通行保留区未通过校核。";
+            footerDetail.ForeColor=badStacking || badLockerAisle || badAccess?Color.Firebrick:Muted;
             statistics.Text=prefix.Trim()+"\r\n"+footerTitle.Text+"\r\n"+
                 $"地面柜组 {stats.Groups} / 箱体 {stats.Boxes} / 转角 {stats.Corners}\r\n挂架 {stats.HangerSegments} 段 / 总长 {stats.HangerLengthMm:0.###} mm\r\n"+
                 (stats.NominalShoeCells>0?$"名义储格 {stats.NominalShoeCells}（每人2格）\r\n":"")+
@@ -516,7 +597,7 @@ namespace Gengyi.Cad.AutoCAD2024
         private static string CheckName(string key)=>key switch
         {
             "geometry"=>"碰撞与尺寸","boundary"=>"房间边界与边距","connections"=>"柜组连接",ShoeStacking.CheckKey=>"48人柜两邻24人柜",LockerAisles.CheckKey=>"一更柜间净距至少1100 mm","front_access"=>"操作侧可达",
-            "entry_reachability"=>"入口可达","hygiene_without_crossing"=>"实体脏净分隔","walking_without_crossing"=>"人员无法绕行",
+            RoomAccess.EntryCheck=>"出入口可达",RoomAccess.ClearanceCheck=>"出入口与保留区净空","hygiene_without_crossing"=>"实体脏净分隔","walking_without_crossing"=>"人员无法绕行",
             "workflow_with_crossing"=>"跨柜转换流程","source_block"=>"设备图块比对","operation"=>"实际操作空间","installation"=>"挂架安装条件","auxiliary_operations"=>"辅助设备操作",_=>key
         };
         private static string StateName(CheckState state)=>state switch{CheckState.Pass=>"通过",CheckState.Fail=>"未通过",CheckState.RequiresInput=>"待补充 / 核对",CheckState.ApproximateOnly=>"仅近似预检",_=>"尚未检查"};

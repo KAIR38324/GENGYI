@@ -199,8 +199,9 @@ namespace Gengyi.Cad.AutoCAD2024
             var scene=Commands.HasPreview(s)?s.Room.Candidates[s.Room.SelectedCandidate].Items:s.Room.Placed;
             ShoeStacking.RejectNewViolations(scene,scene.Concat(new[]{item}).ToList());
             LockerAisles.RejectNewViolations(s.Room,scene,scene.Concat(new[]{item}).ToList());
+            Commands.CheckAccessEdit(s,scene,scene.Concat(new[]{item}).ToList());
             if(Commands.HasPreview(s))
-                s.Edit(_=>{var candidate=s.Room.Candidates[s.Room.SelectedCandidate];candidate.Items.Add(item);candidate.Statistics=Validation.Evaluate(s.Project,s.Room,candidate.Items);});
+                s.Edit(_=>{var candidate=s.Room.Candidates[s.Room.SelectedCandidate];candidate.Items.Add(item);candidate.Statistics=Validation.Evaluate(s.Project,s.Room,candidate.Scene(s.Room));});
             else
             {
                 mapping=Blocks.Mapping(s,item);

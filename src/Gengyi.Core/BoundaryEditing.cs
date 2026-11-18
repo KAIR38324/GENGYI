@@ -69,10 +69,15 @@ namespace Gengyi.Core
                     double rotation=Geometry.Normalize(Math.Atan2(axis.Y,axis.X)*180/Math.PI);
                     points.Add(()=>{item.Position=position;item.Rotation=rotation;});
                 }
-                foreach(var region in room.Obstacles.Concat(room.Closures))
+                foreach(var region in room.Obstacles.Concat(room.Closures).Concat(room.Passages))
                 {
                     var mapped=region.Points.Select(Map).ToList();
                     points.Add(()=>region.Points=mapped);
+                }
+                foreach(var door in room.Doors)
+                {
+                    var start=Map(door.Start); var end=Map(door.End);
+                    points.Add(()=>{door.Start=start;door.End=end;});
                 }
                 var dirty=room.DirtySeed==null?null:Map(room.DirtySeed);
                 var clean=room.CleanSeed==null?null:Map(room.CleanSeed);
@@ -82,7 +87,7 @@ namespace Gengyi.Core
             // Validate and prepare every conversion before changing any room state.
             foreach(var apply in points)apply();
             room.Boundary=next;room.Stale=true;room.ConstraintIssue="";
-            if(discardCandidates){room.Candidates.Clear();room.SelectedCandidate=0;room.PreviewVisible=false;}
+            if(discardCandidates)room.InvalidateCandidates();
         }
 
         private static bool Finite(double value)=>!double.IsNaN(value) && !double.IsInfinity(value);

@@ -19,6 +19,7 @@ namespace Gengyi.Cad.AutoCAD2024
         internal string WitnessRoom="";
         internal readonly Preview Preview=new Preview();
         private string? saved;
+        private readonly HashSet<string> roomsWithGraphics=new HashSet<string>();
         internal Session(Document document)
         {
             Document=document;
@@ -104,21 +105,35 @@ namespace Gengyi.Cad.AutoCAD2024
                 }
                 foreach(var room in Project.Rooms)
                 {
-                    foreach(var region in room.Obstacles.Concat(room.Closures))
+                    foreach(var region in room.Obstacles.Concat(room.Closures).Concat(room.Passages))
                     {
                         if(region.NativeHandle.Length==0 || room.Boundary==null)continue;
+                        bool passage=room.Passages.Contains(region);
                         try
                         {
                             var id=Document.Database.GetObjectId(false,new Handle(Convert.ToInt64(region.NativeHandle,16)),0);
-                            if(id.IsErased){region.Points.Clear();continue;}
+                            if(id.IsErased)
+                            {
+                                if(passage)throw new ArgumentException("所选轮廓已删除。");
+                                region.Points.Clear();continue;
+                            }
                             if(transaction.GetObject(id,OpenMode.ForRead) is Polyline pl)
                             {
-                                region.Points=CadGeometry.PolylinePoints(pl,.05/room.Boundary.Frame.MillimetersPerDrawingUnit).Select(p=>CadGeometry.Local(room.Boundary.Frame,p)).ToList();
+                                var points=CadGeometry.PolylinePoints(pl,.05/room.Boundary.Frame.MillimetersPerDrawingUnit).Select(p=>CadGeometry.Local(room.Boundary.Frame,p)).ToList();
+                                Geometry.Polygon(points);
+                                if(passage && (points.Count!=region.Points.Count || points.Where((p,i)=>p.Distance(region.Points[i])>.00001).Any()))
+                                    room.InvalidateCandidates();
+                                region.Points=points;
                                 region.CurveToleranceMm=Enumerable.Range(0,pl.NumberOfVertices).Any(i=>Math.Abs(pl.GetBulgeAt(i))>1e-10)?.05:0;
                             }
+                            else throw new ArgumentException("所选轮廓已不再是闭合多段线。");
                         }
-                        catch(Autodesk.AutoCAD.Runtime.Exception){region.Points.Clear();}
-                        catch(ArgumentException ex){room.ConstraintIssue="现场轮廓失效："+ex.Message;}
+                        catch(System.Exception ex) when(ex is ArgumentException || ex is Autodesk.AutoCAD.Runtime.Exception)
+                        {
+                            if(passage){room.ConstraintIssue="通行保留区失效，请替换或清空："+ex.Message;room.InvalidateCandidates();}
+                            else if(ex is Autodesk.AutoCAD.Runtime.Exception)region.Points.Clear();
+                            else room.ConstraintIssue="现场轮廓失效："+ex.Message;
+                        }
                     }
                     room.Obstacles.RemoveAll(r=>r.Points.Count<3);room.Closures.RemoveAll(r=>r.Points.Count<3);
                     room.Statistics=Validation.Evaluate(Project,room,room.Placed);
@@ -126,27 +141,65 @@ namespace Gengyi.Cad.AutoCAD2024
                     {
                         room.SelectedCandidate=Math.Max(0,Math.Min(room.SelectedCandidate,room.Candidates.Count-1));
                         var candidate=room.Candidates[room.SelectedCandidate];
-                        candidate.Statistics=Validation.Evaluate(Project,room,candidate.Items);
+                        candidate.Statistics=Validation.Evaluate(Project,room,candidate.Scene(room));
                     }
                 }
                 transaction.Commit();
             }
             Dirty=false;
         }
+        internal void EnableRoomGraphics()
+        {
+            Preview.Clear();
+            roomsWithGraphics.Add(Room.Id);
+        }
+        internal void HideRoomGraphics()
+        {
+            roomsWithGraphics.Remove(Project.CurrentRoomId);
+            var room=Project.Rooms.FirstOrDefault(r=>r.Id==Project.CurrentRoomId);
+            if(room!=null)room.PreviewVisible=false;
+            WitnessPath=null;
+            Preview.Clear();
+            Document.Editor.Regen();
+        }
+        internal void ShowRoomPreview()
+        {
+            if(Preview.PlanningVisible)return;
+            if(!roomsWithGraphics.Contains(Room.Id))
+            {
+                Preview.Clear();
+                return;
+            }
+            var items=Room.PreviewVisible && Room.Candidates.Count>0?Room.Candidates[Room.SelectedCandidate].Items:Enumerable.Empty<Placement>();
+            Preview.Show(this,items);
+            if(Room.Boundary!=null && WitnessRoom==Room.Id && WitnessPath!=null && WitnessPath.Count>1)
+            {
+                var line=CadGeometry.PreviewPolyline(Document.Database,WitnessPath,Room.Boundary.Frame,1);
+                line.Closed=false;Preview.Overlay(line);
+            }
+        }
         internal void Edit(Action<Transaction> action)
         {
             WitnessPath=null;
             string snapshot=Serialization.Write(Project);
+            var previews=new HashSet<string>(Project.Rooms.Where(room=>room.PreviewVisible).Select(room=>room.Id));
             Writing=true;
             try
             {
                 using(var transaction=Document.Database.TransactionManager.StartTransaction())
                 {
-                    action(transaction);Store.Project(Document.Database,Project,transaction);transaction.Commit();
+                    action(transaction);
+                    string projectData=Store.SaveProject(Document.Database,Project,transaction);
+                    transaction.Commit();
+                    saved=projectData;
                 }
-                saved=Store.Pack(Project);
             }
-            catch{Project=Serialization.Read<Project>(snapshot);throw;}
+            catch
+            {
+                Project=Serialization.Read<Project>(snapshot);
+                foreach(var room in Project.Rooms)room.PreviewVisible=previews.Contains(room.Id);
+                throw;
+            }
             finally{Writing=false;Dirty=true;}
         }
         internal void Save()=>Edit(_=>{});
@@ -196,7 +249,7 @@ namespace Gengyi.Cad.AutoCAD2024
             try
             {
                 s.Refresh();Panel?.Update(s);
-                if(!s.Preview.PlanningVisible && s.Room.PreviewVisible && s.Room.Candidates.Count>0)s.Preview.Show(s,s.Room.Candidates[Math.Min(s.Room.SelectedCandidate,s.Room.Candidates.Count-1)].Items);
+                s.ShowRoomPreview();
             }
             catch(Exception ex){s.Dirty=false;doc.Editor.WriteMessage("\nGENGYI 同步失败："+ex.Message);}
         }
