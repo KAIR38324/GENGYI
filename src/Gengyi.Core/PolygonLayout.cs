@@ -9,7 +9,7 @@ namespace Gengyi.Core
 {
     public static partial class Layout
     {
-        private static IEnumerable<Candidate> PolygonCandidates(Room room,int target,CancellationToken cancellation)
+        private static IEnumerable<Candidate> PolygonCandidates(Room room,int target,Geo reserved,CancellationToken cancellation)
         {
             if(target==0){yield return new Candidate{Family="不规则空房间"};yield break;}
             var boundary=room.Boundary!;
@@ -18,6 +18,7 @@ namespace Gengyi.Core
             if(room.Mode==RoomMode.Shoe)usable=usable.Buffer(-room.Options.ShoeBoundaryMm,16);
             var fixedObjects=Geometry.Union(room.Obstacles.Concat(room.Closures).Select(Geometry.RegionFootprint));
             if(!fixedObjects.IsEmpty)usable=usable.Difference(fixedObjects);
+            if(!reserved.IsEmpty)usable=usable.Difference(reserved);
             foreach(bool vertical in new[]{false,true})
             {
                 cancellation.ThrowIfCancellationRequested();
@@ -28,7 +29,7 @@ namespace Gengyi.Core
                 foreach(bool alternative in new[]{false,true})
                     foreach(bool stacking in room.Mode==RoomMode.Shoe && room.Options.AllowStacking?new[]{false,true}:new[]{false})
                     {
-                        var c=new Candidate{Family="不规则分区/"+(room.Mode==RoomMode.Shoe?(alternative?"直段低柜":"S柜链"):room.Mode==RoomMode.FirstChange?(alternative?"背靠背衣柜":"单面衣柜"):(alternative?"边列挂架":"中排挂架"))+
+                        var c=new Candidate{Family="分区/"+(room.Mode==RoomMode.Shoe?(alternative?"直段低柜":"S柜链"):(alternative?"边列挂架":"中排挂架"))+
                             "/"+(vertical?"竖向":"横向")+(stacking?"/24—48—24":"")};
                         int remaining=target;
                         foreach(var space in spaces)
@@ -37,7 +38,6 @@ namespace Gengyi.Core
                             if(remaining<=0)break;
                             List<Placement> items;
                             if(room.Mode==RoomMode.Shoe)items=ShoesInSpace(room,space,remaining,stacking,alternative,aisle,cancellation);
-                            else if(room.Mode==RoomMode.FirstChange)items=LockersInSpace(room,space,remaining,alternative,aisle);
                             else items=HangersInSpace(room,space,remaining,alternative,aisle);
                             foreach(var item in items)
                             {
@@ -101,26 +101,6 @@ namespace Gengyi.Core
             if(selected==null)return new List<Placement>();
             foreach(var item in selected.Items)item.Position+=new V2(space.X,space.Y);
             return selected.Items;
-        }
-
-        private static List<Placement> LockersInSpace(Room room,BoundarySpace space,int target,bool paired,double aisle)
-        {
-            var choices=new List<List<Placement>>();int needed=(target+11)/12;
-            foreach(bool rotated in new[]{false,true})
-            {
-                double w=rotated?space.Height:space.Width,h=rotated?space.Width:space.Height;
-                int columns=Math.Max(0,(int)Math.Floor((w-aisle)/1140));
-                var items=new List<Placement>();double rear=room.Options.RearGapMm;
-                double depth=paired?1000+rear:500+rear,step=depth+aisle;
-                for(double y=aisle;y+depth+(paired?aisle:0)<=h+.000001 && items.Count<needed;y+=step)
-                    for(int col=0;col<columns && items.Count<needed;col++)
-                    {
-                        items.Add(Place(room,"LOCKER12",col*1140,y));
-                        if(paired && items.Count<needed)items.Add(Place(room,"LOCKER12",(col+1)*1140,y+1000+rear,180));
-                    }
-                PositionInSpace(items,space,rotated);choices.Add(items);
-            }
-            return choices.OrderByDescending(c=>c.Count).First();
         }
 
         private static List<Placement> HangersInSpace(Room room,BoundarySpace space,int target,bool edges,double aisle)

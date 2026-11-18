@@ -29,43 +29,79 @@ namespace Gengyi.Core
             var actualBoundary=Geometry.RoomPolygon(room.Boundary);
             var boxBoundary=Geometry.Polygon(Geometry.Rect(0,0,room.Boundary.Width,room.Boundary.Height));
             bool rectangular=actualBoundary.SymmetricDifference(boxBoundary).Area<=Geometry.AreaTolerance;
-            var candidates = !rectangular ? PolygonCandidates(room,target,cancellation) : room.Mode == RoomMode.Shoe ? Shoes(room, target) : room.Mode == RoomMode.FirstChange ? Lockers(room, target) : Hangers(room, target);
+            var reserved=RoomAccess.ReservedSpace(room);
+            bool hasAccess=room.Doors.Count>0 || room.Passages.Count>0;
+            var candidates = room.Mode==RoomMode.FirstChange?Lockers(room,target,reserved,cancellation):
+                !rectangular?PolygonCandidates(room,target,reserved,cancellation):
+                room.Mode==RoomMode.Shoe?Shoes(room,target):Hangers(room,target);
+            bool translate=rectangular && room.Mode!=RoomMode.FirstChange;
+            var drafts=candidates.Select(candidate=>(Candidate:candidate,Translate:translate));
+            if(translate && hasAccess)
+                drafts=drafts.Concat(PolygonCandidates(room,target,reserved,cancellation).Select(candidate=>(candidate,false)));
             var signatures = new HashSet<string>();
             // Geometric enumeration does not mutate the room's placed entities or selected draft.
-            var rough = new List<Candidate>();
-            foreach (Candidate c in candidates)
+            var rough = new List<(Candidate Candidate,bool Translate)>();
+            foreach (var draft in drafts)
             {
                 cancellation.ThrowIfCancellationRequested();
                 output.Enumerated++;
                 if (clock.ElapsedMilliseconds > 5000) { output.TimedOut = true; break; }
-                if (signatures.Add(Signature(c.Items))) rough.Add(c);
+                if (signatures.Add(Signature(draft.Candidate.Items,hasAccess))) rough.Add(draft);
             }
-            rough = rough.OrderBy(c => Math.Max(0, target - c.Items.Sum(p => Capacity.Nominal(p, room.Options))))
-                .ThenBy(c => Math.Abs(c.Items.Sum(p => Capacity.Nominal(p, room.Options)) - target))
-                .ThenBy(c => c.Items.Count).ToList();
+            rough = rough.OrderBy(d => Math.Max(0, target - d.Candidate.Items.Sum(p => Capacity.Nominal(p, room.Options))))
+                .ThenBy(d => Math.Abs(d.Candidate.Items.Sum(p => Capacity.Nominal(p, room.Options)) - target))
+                .ThenBy(d => d.Candidate.Items.Count).ToList();
             // Limit precise Boolean geometry work, retaining different families and orientations.
-            var selected = rough.GroupBy(c => c.Family).SelectMany(g => g.Take(3)).Take(36).ToList();
-            foreach (Candidate c in selected)
+            var selected = rough.GroupBy(d => d.Candidate.Family).SelectMany(g => g.Take(3)).Take(36).ToList();
+            foreach (var draft in selected)
             {
+                var c=draft.Candidate;
                 cancellation.ThrowIfCancellationRequested();
                 if (clock.ElapsedMilliseconds > 10000 && output.Candidates.Count > 0) { output.TimedOut = true; break; }
                 foreach (var p in c.Items) ResolveMapping(project, p);
-                if(rectangular)FitAroundObstacles(room,c,cancellation);
+                if(draft.Translate)FitAroundObstacles(room,c,reserved,cancellation);
+                if(hasAccess)
+                {
+                    RemovePlacementsAndGroups(c.Items,item=>Geometry.Footprint(item).Intersection(reserved).Area>Geometry.AreaTolerance);
+                }
                 c.Statistics = Validation.Evaluate(project, room, c.Items);
-                output.Candidates.Add(c);
+                if(hasAccess)
+                {
+                    var unreachable=new HashSet<string>(c.Statistics.Issues.Where(i=>i.Code=="DOOR_FRONT_UNREACHABLE").Select(i=>i.InstanceId));
+                    if(RemovePlacementsAndGroups(c.Items,item=>unreachable.Contains(item.Id) || room.Mode!=RoomMode.Shoe &&
+                        c.Statistics.GeometricByInstance.TryGetValue(item.Id,out int usable) && usable==0)>0)
+                        c.Statistics=Validation.Evaluate(project,room,c.Items);
+                }
+                if(!RoomAccess.Failed(c.Statistics) && (c.Items.Count>0 || target==0))output.Candidates.Add(c);
             }
-            output.Candidates = output.Candidates
+            if(hasAccess && output.Candidates.Count==0)
+            {
+                var empty=new Candidate{Family="当前无可放设备"};
+                empty.Statistics=Validation.Evaluate(project,room,empty.Items);
+                if(!RoomAccess.Failed(empty.Statistics))output.Candidates.Add(empty);
+                else output.Message=empty.Statistics.Issues.First(i=>i.Code.StartsWith("DOOR_",StringComparison.Ordinal) ||
+                    i.Code.StartsWith("PASSAGE_",StringComparison.Ordinal)).Message;
+            }
+            output.Candidates = output.Candidates.GroupBy(c=>Signature(c.Items,hasAccess)).Select(g=>g.First())
                 .OrderBy(c => c.Statistics.Checks["geometry"] == CheckState.Fail ? 1 : 0)
                 .ThenBy(c => c.Statistics.Checks["boundary"] == CheckState.Fail ? 1 : 0)
                 .ThenBy(c => c.Statistics.ConditionalDeficit)
                 .ThenBy(c => c.Statistics.Blocked)
                 .ThenBy(c => c.Statistics.NominalSurplus)
                 .ThenBy(c => c.Statistics.ProjectionM2).Take(8).ToList();
-            output.Message = output.Candidates.Count == 0 ? "当前候选家族没有找到可放下的柜链/挂架组合；请检查实际边界、净距与允许柜型。没有穷举任意构型，不能宣称全局无解。" :
+            if(output.Message.Length==0)output.Message = output.Candidates.Count == 0 ? "当前候选家族没有找到可放下的柜链/挂架组合；请检查实际边界、净距与允许柜型。没有穷举任意构型，不能宣称全局无解。" :
                 "得到 " + output.Candidates.Count + " 个不同预排；各项检查独立显示，待核预排不等于有效方案。";
+            if(hasAccess && output.Candidates.Count>0)output.Message+=$" 已避让所选出入口与通行区，最佳方案条件缺口 {output.Candidates.Min(c=>c.Statistics.ConditionalDeficit)}。";
             if(!rectangular)output.Message+=" 按实际轮廓保守分区排布，缺角和障碍不放柜；不足时显示差额，不把外包矩形当作房间，也不据此认定全局无解。";
             if (output.TimedOut) output.Message += " 搜索达到时间预算，未完成穷举，不能据此认定最优或无解。";
             return output;
+        }
+
+        private static int RemovePlacementsAndGroups(List<Placement> items,Func<Placement,bool> exclude)
+        {
+            var blocked=new HashSet<Placement>(items.Where(exclude));
+            var groups=new HashSet<string>(blocked.Where(item=>item.GroupId.Length>0).Select(item=>item.GroupId));
+            return items.RemoveAll(item=>blocked.Contains(item) || groups.Contains(item.GroupId));
         }
 
         public static void ResolveMapping(Project project, Placement p)
@@ -154,47 +190,6 @@ namespace Gengyi.Core
             return c;
         }
 
-        private static IEnumerable<Candidate> Lockers(Room room, int target)
-        {
-            int count = (target + 11) / 12;
-            if (count == 0) { yield return new Candidate { Family = "空房间" }; yield break; }
-            var b = room.Boundary!;
-            foreach (bool vertical in new[] { false, true })
-            {
-                double w = vertical ? b.Height : b.Width, h = vertical ? b.Width : b.Height;
-                double rear = room.Options.RearGapMm, aisle = room.Options.PlanningAisleFor(room.Mode);
-                var wall = new Candidate { Family = "沿墙柜排/" + (vertical ? "竖" : "横") };
-                int perRow = Math.Max(0, (int)Math.Floor(w / 1140));
-                for (int n = 0; n < perRow && wall.Items.Count < count && h >= 500 + rear; n++)
-                    wall.Items.Add(Place(room, "LOCKER12", (n + 1) * 1140, rear + 500, 180));
-                if (h >= 1000 + 2 * rear + aisle)
-                    for (int n = 0; n < perRow && wall.Items.Count < count; n++)
-                        wall.Items.Add(Place(room, "LOCKER12", n * 1140, h - rear - 500));
-                if (w >= 1000 + 2 * rear + aisle)
-                    for (double y = rear + 500 + aisle; y + 1140 <= h - rear - 500 - aisle && wall.Items.Count < count; y += 1140)
-                    {
-                        wall.Items.Add(Place(room, "LOCKER12", rear + 500, y, 90));
-                        if (wall.Items.Count < count) wall.Items.Add(Place(room, "LOCKER12", w - rear - 500, y + 1140, 270));
-                    }
-                if (vertical) RotateIntoBoundary(wall, b.Width);
-                if (wall.Items.Count > 0) yield return wall;
-                foreach (bool paired in new[] { false, true })
-                {
-                    var rows = new Candidate { Family = (paired ? "背靠背岛柜" : "多列单面柜") + "/" + (vertical ? "竖" : "横") };
-                    double step = (paired ? 1000 + rear : 500) + aisle;
-                    for (double y = aisle; y + (paired ? 1000 + rear : 500) <= h && rows.Items.Count < count; y += step)
-                        for (int n = 0; n < perRow && rows.Items.Count < count; n++)
-                        {
-                            rows.Items.Add(Place(room, "LOCKER12", n * 1140, y));
-                            if (paired && rows.Items.Count < count)
-                                rows.Items.Add(Place(room, "LOCKER12", (n + 1) * 1140, y + 1000 + rear, 180));
-                        }
-                    if (vertical) RotateIntoBoundary(rows, b.Width);
-                    if (rows.Items.Count > 0) yield return rows;
-                }
-            }
-        }
-
         private static IEnumerable<Candidate> Hangers(Room room, int target)
         {
             if (target == 0) { yield return new Candidate { Family = "空房间" }; yield break; }
@@ -240,18 +235,20 @@ namespace Gengyi.Core
                 p.Rotation = Geometry.Normalize(p.Rotation + 90);
             }
         }
-        public static string Signature(IEnumerable<Placement> items)
+        public static string Signature(IEnumerable<Placement> items,bool absolute=false)
         {
             var list = items.ToList();
-            double x = list.Count == 0 ? 0 : list.Min(p => p.Position.X), y = list.Count == 0 ? 0 : list.Min(p => p.Position.Y);
+            double x = absolute || list.Count == 0 ? 0 : list.Min(p => p.Position.X), y = absolute || list.Count == 0 ? 0 : list.Min(p => p.Position.Y);
             string N(double v) => Math.Round(v, 3).ToString(CultureInfo.InvariantCulture);
             return string.Join(";", list.Select(p => p.EquipmentId + ":" + N(p.Position.X - x) + ":" + N(p.Position.Y - y) + ":" + N(p.Rotation) + ":" + N(p.Length)).OrderBy(s => s, StringComparer.Ordinal));
         }
-        private static void FitAroundObstacles(Room room,Candidate candidate,CancellationToken cancellation)
+        private static void FitAroundObstacles(Room room,Candidate candidate,NetTopologySuite.Geometries.Geometry reserved,CancellationToken cancellation)
         {
-            if(room.Obstacles.Count==0 || candidate.Items.Count==0)return;
+            var fixedObjects=room.Obstacles.Concat(room.Closures).Select(Geometry.RegionFootprint).ToList();
+            if((fixedObjects.Count==0 && reserved.IsEmpty) || candidate.Items.Count==0)return;
             var union=Geometry.Union(candidate.Items.Select(Geometry.Footprint));
-            var obstacle=Geometry.Union(room.Obstacles.Select(Geometry.RegionFootprint));
+            var obstacle=Geometry.Union(fixedObjects);
+            var excluded=obstacle.Union(reserved);
             var envelope=union.EnvelopeInternal;var b=room.Boundary!;
             double margin=room.Mode==RoomMode.Shoe?room.Options.ShoeBoundaryMm:0;
             double minX=margin-envelope.MinX,maxX=b.Width-margin-envelope.MaxX;
@@ -259,9 +256,11 @@ namespace Gengyi.Core
             if(minX>maxX || minY>maxY)return;
             var xs=new List<double>{0,minX,maxX,(minX+maxX)/2};var ys=new List<double>{0,minY,maxY,(minY+maxY)/2};
             double operation=room.Options.OperationDepthMm??room.Options.PlanningAisleMm;
-            foreach(var region in room.Obstacles)
+            foreach(var restriction in fixedObjects.Concat(Geometry.Components(reserved)))
             {
-                var ob=Geometry.RegionFootprint(region).EnvelopeInternal;
+                var ob=restriction.EnvelopeInternal;
+                xs.Add(ob.MinX-envelope.MaxX);xs.Add(ob.MaxX-envelope.MinX);
+                ys.Add(ob.MinY-envelope.MaxY);ys.Add(ob.MaxY-envelope.MinY);
                 xs.Add(ob.MinX-envelope.MaxX-operation);xs.Add(ob.MaxX-envelope.MinX+operation);
                 ys.Add(ob.MinY-envelope.MaxY-operation);ys.Add(ob.MaxY-envelope.MinY+operation);
             }
@@ -271,7 +270,7 @@ namespace Gengyi.Core
                 {
                     cancellation.ThrowIfCancellationRequested();
                     var moved=NetTopologySuite.Geometries.Utilities.AffineTransformation.TranslationInstance(x,y).Transform(union);
-                    double collision=moved.Intersection(obstacle).Area;
+                    double collision=moved.Intersection(excluded).Area;
                     double operating=moved.Buffer(operation/2,8).Intersection(obstacle).Area;
                     double score=collision*1e9+operating*100+Math.Abs(x)+Math.Abs(y);
                     if(score<bestScore){bestScore=score;best=new V2(x,y);}

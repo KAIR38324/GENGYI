@@ -104,21 +104,35 @@ namespace Gengyi.Cad.AutoCAD2024
                 }
                 foreach(var room in Project.Rooms)
                 {
-                    foreach(var region in room.Obstacles.Concat(room.Closures))
+                    foreach(var region in room.Obstacles.Concat(room.Closures).Concat(room.Passages))
                     {
                         if(region.NativeHandle.Length==0 || room.Boundary==null)continue;
+                        bool passage=room.Passages.Contains(region);
                         try
                         {
                             var id=Document.Database.GetObjectId(false,new Handle(Convert.ToInt64(region.NativeHandle,16)),0);
-                            if(id.IsErased){region.Points.Clear();continue;}
+                            if(id.IsErased)
+                            {
+                                if(passage)throw new ArgumentException("所选轮廓已删除。");
+                                region.Points.Clear();continue;
+                            }
                             if(transaction.GetObject(id,OpenMode.ForRead) is Polyline pl)
                             {
-                                region.Points=CadGeometry.PolylinePoints(pl,.05/room.Boundary.Frame.MillimetersPerDrawingUnit).Select(p=>CadGeometry.Local(room.Boundary.Frame,p)).ToList();
+                                var points=CadGeometry.PolylinePoints(pl,.05/room.Boundary.Frame.MillimetersPerDrawingUnit).Select(p=>CadGeometry.Local(room.Boundary.Frame,p)).ToList();
+                                Geometry.Polygon(points);
+                                if(passage && (points.Count!=region.Points.Count || points.Where((p,i)=>p.Distance(region.Points[i])>.00001).Any()))
+                                    room.InvalidateCandidates();
+                                region.Points=points;
                                 region.CurveToleranceMm=Enumerable.Range(0,pl.NumberOfVertices).Any(i=>Math.Abs(pl.GetBulgeAt(i))>1e-10)?.05:0;
                             }
+                            else throw new ArgumentException("所选轮廓已不再是闭合多段线。");
                         }
-                        catch(Autodesk.AutoCAD.Runtime.Exception){region.Points.Clear();}
-                        catch(ArgumentException ex){room.ConstraintIssue="现场轮廓失效："+ex.Message;}
+                        catch(System.Exception ex) when(ex is ArgumentException || ex is Autodesk.AutoCAD.Runtime.Exception)
+                        {
+                            if(passage){room.ConstraintIssue="通行保留区失效，请替换或清空："+ex.Message;room.InvalidateCandidates();}
+                            else if(ex is Autodesk.AutoCAD.Runtime.Exception)region.Points.Clear();
+                            else room.ConstraintIssue="现场轮廓失效："+ex.Message;
+                        }
                     }
                     room.Obstacles.RemoveAll(r=>r.Points.Count<3);room.Closures.RemoveAll(r=>r.Points.Count<3);
                     room.Statistics=Validation.Evaluate(Project,room,room.Placed);
@@ -132,6 +146,12 @@ namespace Gengyi.Cad.AutoCAD2024
                 transaction.Commit();
             }
             Dirty=false;
+        }
+        internal void ShowRoomPreview()
+        {
+            if(Preview.PlanningVisible)return;
+            var items=Room.PreviewVisible && Room.Candidates.Count>0?Room.Candidates[Room.SelectedCandidate].Items:Enumerable.Empty<Placement>();
+            Preview.Show(this,items);
         }
         internal void Edit(Action<Transaction> action)
         {
@@ -196,7 +216,7 @@ namespace Gengyi.Cad.AutoCAD2024
             try
             {
                 s.Refresh();Panel?.Update(s);
-                if(!s.Preview.PlanningVisible && s.Room.PreviewVisible && s.Room.Candidates.Count>0)s.Preview.Show(s,s.Room.Candidates[Math.Min(s.Room.SelectedCandidate,s.Room.Candidates.Count-1)].Items);
+                s.ShowRoomPreview();
             }
             catch(Exception ex){s.Dirty=false;doc.Editor.WriteMessage("\nGENGYI 同步失败："+ex.Message);}
         }

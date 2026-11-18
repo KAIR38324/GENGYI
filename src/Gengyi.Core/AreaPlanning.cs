@@ -35,13 +35,11 @@ namespace Gengyi.Core
         {
             var options=Serialization.Copy(room.Options);
             options.ShoeCapacities=options.ShoeCapacities.Distinct().OrderBy(c=>c).ToList();
-            if(room.Mode==RoomMode.FirstChange)options.PlanningAisleMm=options.PlanningAisleFor(room.Mode);
             string Number(decimal value)=>value.ToString("G29",CultureInfo.InvariantCulture);
             return Serialization.Write(new
             {
                 room.Id,room.Mode,room.Gender,room.CustomPeople,
-                ReserveOverride=room.ReserveOverride.HasValue?Number(room.ReserveOverride.Value):null,
-                population.Registered,population.Shift,MaleRatio=Number(population.MaleRatio),Reserve=Number(population.Reserve),Options=options,
+                population.ShiftCount,population.PeoplePerShift,MaleRatio=Number(population.MaleRatio),Options=options,
                 Equipment.ShoeDepthMm,Equipment.ShoeDuctMm,Equipment.CornerRadiusMm
             });
         }
@@ -64,8 +62,8 @@ namespace Gengyi.Core
             var output = new AreaEstimate
             {
                 Target = target,
-                Basis = (room.CustomPeople.HasValue ? "本房自定义人数" : room.Mode == RoomMode.SecondChange ? "按当班人数" : "按在册人数") +
-                    $"；备用 {(room.ReserveOverride ?? population.Reserve)*100:0.##}%；目标 {target} 人",
+                Basis = (room.Mode == RoomMode.SecondChange ? "按一班周转" : population.ShiftCount == 2 ? "按两班合计" : "按一班") +
+                    $" · {population.BaseFor(room)} × 1.1 向上取整 · 目标 {target} 人",
                 Assumptions = room.Mode == RoomMode.Shoe
                     ? $"鞋柜深{Equipment.ShoeDepthMm:0} mm（含中间{Equipment.ShoeDuctMm:0} mm通风道），含四周 {o.ShoeBoundaryMm:0} mm 边距与假定 R{Equipment.CornerRadiusMm:0} 扇形角；连接净距至少 {aisle:0} mm。48人柜必须24—48—24交错。门柱、封闭与脏净绕行待选框后校核。"
                     : $"按操作/通行净距 {aisle:0} mm、背距 {o.RearGapMm:0} mm 预排；门柱、更衣动作及辅助设备另核。" +
@@ -77,7 +75,8 @@ namespace Gengyi.Core
                 return output;
             }
 
-            var drafts = room.Mode == RoomMode.Shoe ? Shoes(room, target, aisle) : Rows(room, target, aisle);
+            var drafts = room.Mode == RoomMode.Shoe ? Shoes(room, target, aisle) :
+                room.Mode == RoomMode.FirstChange ? Lockers(room,target,aisle) : Rows(room, target, aisle);
             // Three distinct low-cabinet/row proportions, plus one explicitly marked stacking alternative.
             // Ordering depends only on dimensions and options, so GYRECT Suggested matches the palette.
             var selected = new List<Draft>();
@@ -142,26 +141,47 @@ namespace Gengyi.Core
             return output;
         }
 
+        private static List<Draft> Lockers(Room room,int target,double aisle)
+        {
+            const double length=1140, depth=500;
+            int count=(target+11)/12;
+            double rear=room.Options.RearGapMm;
+            var drafts=new List<Draft>();
+            for(int columns=1;columns<=Math.Min(count,64);columns++)
+            {
+                int n=columns, rows=(count+n-1)/n;
+                int aisles=(rows+1)/2;
+                double height=rows*depth+aisles*aisle+2*rear+Math.Max(0,aisles-1)*rear;
+                drafts.Add(new Draft
+                {
+                    W=n*length+(aisles>1?aisle:0), H=height, Name=$"{rows}排 · {count}个12门4层柜",
+                    Build=()=>Enumerable.Range(0,count).Select(i=>
+                    {
+                        int row=i/n, col=i%n;
+                        double y=rear+(row/2)*(2*depth+aisle+rear);
+                        return row%2==0?Layout.Place(room,"LOCKER12",(col+1)*length,y+depth,180):
+                            Layout.Place(room,"LOCKER12",col*length,y+depth+aisle);
+                    }).ToList()
+                });
+            }
+            return drafts;
+        }
+
         private static List<Draft> Rows(Room room, int target, double aisle)
         {
             var o = room.Options;
             var parts = new List<double>();
-            if (room.Mode == RoomMode.FirstChange)
-                parts.AddRange(Enumerable.Repeat(1140.0, (target+11)/12));
-            else
+            int maxHooks = o.HangerMaxSegmentMm < o.HookStartMarginMm + o.HookEndMarginMm ? 0 :
+                (int)Math.Floor((o.HangerMaxSegmentMm-o.HookStartMarginMm-o.HookEndMarginMm)/o.HookPitchMm)+1;
+            if (maxHooks <= 0) return new List<Draft>();
+            for (int remaining = target; remaining > 0; remaining -= Math.Min(remaining, maxHooks))
             {
-                int maxHooks = o.HangerMaxSegmentMm < o.HookStartMarginMm + o.HookEndMarginMm ? 0 :
-                    (int)Math.Floor((o.HangerMaxSegmentMm-o.HookStartMarginMm-o.HookEndMarginMm)/o.HookPitchMm)+1;
-                if (maxHooks <= 0) return new List<Draft>();
-                for (int remaining = target; remaining > 0; remaining -= Math.Min(remaining, maxHooks))
-                {
-                    int hooks = Math.Min(remaining, maxHooks);
-                    parts.Add(Math.Max(1, (hooks-1)*o.HookPitchMm + o.HookStartMarginMm + o.HookEndMarginMm));
-                }
+                int hooks = Math.Min(remaining, maxHooks);
+                parts.Add(Math.Max(1, (hooks-1)*o.HookPitchMm + o.HookStartMarginMm + o.HookEndMarginMm));
             }
             var output = new List<Draft>();
-            double depth = room.Mode == RoomMode.FirstChange ? 500 : 450;
-            double gap = room.Mode == RoomMode.FirstChange ? 0 : o.HangerSegmentGapMm;
+            const double depth = 450;
+            double gap = o.HangerSegmentGapMm;
             for (int columns = 1; columns <= Math.Min(parts.Count, 64); columns++)
             {
                 int n = columns, rows = (parts.Count+columns-1)/columns;
@@ -171,7 +191,7 @@ namespace Gengyi.Core
                 output.Add(new Draft
                 {
                     W = run + aisle, H = rows*(depth+o.RearGapMm+aisle),
-                    Name = room.Mode == RoomMode.FirstChange ? $"{rows}排 · {parts.Count}个12门4层柜" : $"{rows}排 · {parts.Count}段挂架",
+                    Name = $"{rows}排 · {parts.Count}段挂架",
                     Build = () =>
                     {
                         var items = new List<Placement>();
@@ -179,8 +199,8 @@ namespace Gengyi.Core
                         {
                             int row = i/n, col = i%n;
                             double x = parts.Skip(row*n).Take(col).Sum()+col*gap;
-                            items.Add(Layout.Place(room, room.Mode == RoomMode.FirstChange ? "LOCKER12" : "HANGER_CUSTOM",
-                                x, aisle+row*(depth+o.RearGapMm+aisle), length: room.Mode == RoomMode.FirstChange ? 0 : parts[i]));
+                            items.Add(Layout.Place(room, "HANGER_CUSTOM",
+                                x, aisle+row*(depth+o.RearGapMm+aisle), length: parts[i]));
                         }
                         return items;
                     }

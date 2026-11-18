@@ -27,6 +27,19 @@ namespace Gengyi.Cad.AutoCAD2024
         {
             Clear();if(session.Room.Boundary==null)return;
             ShowItems(session,session.Room,items);
+            var room=session.Room;
+            foreach(var door in room.Doors)
+                try
+                {
+                    var zone=RoomAccess.Landing(room.Boundary,door,room.Options.WalkWidthMm);
+                    short color=door.Side==DoorSide.Clean?(short)3:(short)4;
+                    Overlay(CadGeometry.Polyline(zone,room.Boundary.Frame,color));
+                    var opening=CadGeometry.Polyline(new[]{door.Start,door.End},room.Boundary.Frame,color);
+                    opening.Closed=false;Overlay(opening);
+                }
+                catch(ArgumentException){ /* Report invalid doors in the room statistics. */ }
+            foreach(var region in room.Passages.Where(r=>r.Points.Count>=3))
+                Overlay(CadGeometry.Polyline(region.Points,room.Boundary.Frame,6));
         }
         private void ShowItems(Session session,Room room,IEnumerable<Placement> items)
         {

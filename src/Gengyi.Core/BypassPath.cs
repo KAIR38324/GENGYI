@@ -12,11 +12,27 @@ namespace Gengyi.Core
         // Every returned segment is checked against the continuous body-clearance polygon.
         public static List<V2> Find(Room room,IReadOnlyList<Placement> items)
         {
-            if(room.Boundary==null || room.DirtySeed==null || room.CleanSeed==null)return new List<V2>();
+            if(room.Boundary==null || room.Doors.Count==0 && (room.DirtySeed==null || room.CleanSeed==null))
+                return new List<V2>();
             double radius=room.Options.WalkWidthMm/2;
             var blockers=Geometry.Union(items.Select(Geometry.Footprint).Concat(room.Obstacles.Concat(room.Closures).Select(Geometry.RegionFootprint)));
             var free=Geometry.RoomPolygon(room.Boundary).Buffer(-radius,32).Difference(blockers.Buffer(radius,32));
             var start=room.DirtySeed;var end=room.CleanSeed;
+            if(room.Doors.Count>0)
+            {
+                var zones=RoomAccess.Clearances(room,new List<Diagnostic>()).Where(z=>z.Door!=null &&
+                    z.Door.Start.Distance(z.Door.End)>=room.Options.WalkWidthMm &&
+                    z.Shape.Intersection(blockers).Area<=Geometry.AreaTolerance).ToList();
+                var components=Geometry.Components(free);
+                var clean=zones.Where(z=>z.Door!.Side==DoorSide.Clean)
+                    .Select(z=>(Point:z.Probe!,Component:Geometry.Component(components,z.Probe!))).ToList();
+                var pair=zones.Where(z=>z.Door!.Side==DoorSide.Dirty)
+                    .Select(z=>(Start:z.Probe!,Component:Geometry.Component(components,z.Probe!)))
+                    .Where(z=>z.Component>=0)
+                    .Join(clean,d=>d.Component,c=>c.Component,(d,c)=>(d.Start,End:c.Point)).FirstOrDefault();
+                start=pair.Start;end=pair.End;
+            }
+            if(start==null || end==null)return new List<V2>();
             bool Clear(V2 a,V2 b)=>free.Covers(Geometry.Factory.CreateLineString(new[]{new Coordinate(a.X,a.Y),new Coordinate(b.X,b.Y)}));
             if(Clear(start,end))return new List<V2>{start,end};
             double step=Math.Max(50,Math.Max(room.Boundary.Width,room.Boundary.Height)/160);

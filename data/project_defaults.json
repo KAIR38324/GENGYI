@@ -2,18 +2,17 @@
   "schema_version": "1.0",
   "updated_local_date": "2026-11-18",
   "units": "mm",
-  "registered_people": 600,
-  "peak_shift_people": 300,
+  "people_per_shift": 300,
+  "allowed_shift_counts": [1, 2],
   "shifts": 2,
   "sex_ratio": {
     "male": 0.5,
     "female": 0.5
   },
-  "shoe_allocation_basis": "registered_people",
-  "first_change_allocation_basis": "registered_people",
-  "second_change_allocation_basis": "peak_shift_people",
-  "reserve_ratio": 0.0,
-  "optional_historical_reserve_ratio": 0.1,
+  "shoe_allocation_basis": "selected_shifts_total",
+  "first_change_allocation_basis": "selected_shifts_total",
+  "second_change_allocation_basis": "people_per_shift",
+  "design_capacity_factor": 1.1,
   "boundary_clearance_mm": 1000,
   "boundary_clearance_mode": "minimum_and_preferred_snap",
   "boundary_exceptions": [],
@@ -35,8 +34,8 @@
     180,
     270
   ],
-  "entry_seed": null,
-  "clean_exit_seed": null,
+  "door_openings": [],
+  "reserved_passages": [],
   "end_closure_status": "requires_geometry_or_explicit_design_definition",
   "hygiene_validation_initial": "unverified",
   "original_block_source_status": "missing",
@@ -70,6 +69,7 @@
     "stacking_choice",
     "planning_preview",
     "actual_closed_boundary",
+    "door_openings_and_reserved_passages",
     "generate_adjust_commit"
   ],
   "boundary_shapes": [

@@ -74,7 +74,7 @@ static class Program
         Assert(Validation.Evaluate(project,room,new[]{single}).GeometricAvailable==12,
             "the inter-cabinet minimum does not impose an unrelated 1100 millimetre wall setback on a lone cabinet");
         Assert(LockerAisles.Violations(Make(RoomMode.Shoe),tight).Count==0,"the first-change aisle rule does not change shoe-room rules");
-        room.Options.PlanningAisleMm=1000;room.Options.OperationDepthMm=null;room.CustomPeople=96;
+        room.Options.PlanningAisleMm=1000;room.Options.OperationDepthMm=null;room.CustomPeople=43;
         var estimate=AreaPlanning.Estimate(project.Population,room);
         Assert(estimate.Assumptions.Contains("1100") && estimate.Options.Count>0 && estimate.Options.All(option=>
         {
@@ -85,11 +85,95 @@ static class Program
         var generated=Layout.Generate(project,room);
         Assert(generated.Candidates.Count>0 && generated.Candidates.All(c=>c.Statistics.Checks[LockerAisles.CheckKey]==CheckState.Pass) && generated.Candidates.Any(c=>c.Statistics.GeometricAvailable>=96),
             "rectangular generation fits two 500 millimetre locker banks around an exact 1100 millimetre shared aisle");
-        room.Boundary=BoundaryEditing.FromOutline(LOutline(),new Frame());room.CustomPeople=300;
+        room.Boundary=new Boundary{Width=6000,Height=1500};room.CustomPeople=20;
+        Assert(Layout.Generate(project,room).Candidates.Any(c=>c.Statistics.GeometricAvailable>=project.Population.For(room) &&
+            c.Items.All(i=>Geometry.Footprint(i).Distance(Geometry.RoomPolygon(room.Boundary).Boundary)<.00001)),
+            "a single wall-backed bank can use a 1000 millimetre operating zone without a second facing bank");
+        room.Boundary=BoundaryEditing.FromOutline(LOutline(),new Frame());room.CustomPeople=136;
         generated=Layout.Generate(project,room);
         Assert(generated.Candidates.Count>1 && generated.Candidates.All(c=>c.Statistics.Checks[LockerAisles.CheckKey]==CheckState.Pass) && generated.Candidates.Any(c=>c.Statistics.GeometricAvailable>=300),
             "irregular first-change layouts preserve the cabinet aisle minimum across real room partitions");
     }
+    static void RoomAccessChecks()
+    {
+        var project=Project.Create();
+        var room=Make(RoomMode.FirstChange,6000,2100);
+        room.CustomPeople=40;
+        room.Doors.Add(new DoorOpening{Start=new V2(0,600),End=new V2(0,1500)});
+        room.Doors.Add(new DoorOpening{Start=new V2(6000,600),End=new V2(6000,1500)});
+        room.Passages.Add(new Region{Points=Geometry.Rect(0,500,6000,1100)});
+        var cabinet=new Placement{EquipmentId="LOCKER12",Position=new V2(2280,500),Rotation=180};
+        var check=Validation.Evaluate(project,room,new[]{cabinet});
+        Assert(check.Checks[RoomAccess.EntryCheck]==CheckState.Pass && !RoomAccess.Failed(check) && check.GeometricAvailable==12,
+            "both 900 mm doors accept 600 mm people, and a reserved aisle connects to the front of a flush-wall cabinet");
+        var blocked=Serialization.Copy(cabinet);blocked.Position=new V2(6000,1200);
+        check=Validation.Evaluate(project,room,new[]{cabinet,blocked});
+        Assert(RoomAccess.Failed(check) && check.Checks[RoomAccess.EntryCheck]==CheckState.Fail &&
+            check.Issues.Any(i=>i.Code=="DOOR_BLOCKED" && i.Message.Contains("2")),
+            "an open first door does not mask the blocked second door");
+        bool editRejected=false;
+        try{RoomAccess.RejectNewViolations(room,new[]{cabinet},new[]{cabinet,blocked});}catch(ArgumentException){editRejected=true;}
+        Assert(editRejected,"manual placement cannot make a new door or passage overlap");
+        var generated=Layout.Generate(project,room);
+        Assert(generated.Candidates.Count>0 && generated.Candidates.All(c=>!RoomAccess.Failed(c.Statistics)) &&
+            generated.Candidates.Any(c=>c.Statistics.GeometricAvailable>=project.Population.For(room) &&
+                c.Items.All(i=>Geometry.Footprint(i).Distance(Geometry.RoomPolygon(room.Boundary!).Boundary)<.00001)),
+            "automatic placement keeps both doors and the shared aisle clear while fitting enough wall-backed cabinets");
+
+        var shortfall=Serialization.Copy(room);shortfall.CustomPeople=1000;
+        var limited=Layout.Generate(project,shortfall);
+        Assert(limited.Candidates.Count>0 && limited.Candidates.All(c=>!RoomAccess.Failed(c.Statistics) &&
+            c.Statistics.ConditionalDeficit>0),"an undersized room reports a shortfall instead of using door and passage space");
+        var frontIsland=Make(RoomMode.FirstChange,6000,5000);
+        frontIsland.Doors.Add(new DoorOpening{Start=new V2(1000,0),End=new V2(1900,0)});
+        frontIsland.Obstacles.Add(new Region{Points=Geometry.Rect(0,2500,6000,150)});
+        var isolated=new Placement{EquipmentId="LOCKER12",Position=new V2(1000,4500)};
+        var isolatedStats=Validation.Evaluate(project,frontIsland,new[]{isolated});
+        Assert(isolatedStats.Checks[RoomAccess.EntryCheck]==CheckState.Pass && isolatedStats.GeometricAvailable==0 &&
+            isolatedStats.Issues.Any(i=>i.Code=="DOOR_FRONT_UNREACHABLE"),
+            "a clear door alone does not certify a cabinet disconnected from it");
+        var narrow=Serialization.Copy(room);narrow.Doors[1].End.Y=1150;
+        Assert(Validation.Evaluate(project,narrow,new[]{cabinet}).Checks[RoomAccess.EntryCheck]==CheckState.Fail,"the narrower second door is checked against the selected walking width");
+        var transformed=new Boundary{Width=2100,Height=6000,Frame=new Frame{Origin=new[]{6000d,0,0},
+            XAxis=new[]{0d,1,0},YAxis=new[]{-1d,0,0}}};
+        var oldFrame=room.Boundary!.Frame;
+        var doorWorld=oldFrame.ToWorld(room.Doors[1].Start);
+        var passageWorld=oldFrame.ToWorld(room.Passages[0].Points[1]);
+        BoundaryEditing.Replace(room,transformed);
+        var copy=Serialization.Copy(room);
+        Assert(copy.Boundary!.Frame.ToWorld(copy.Doors[1].Start).SequenceEqual(doorWorld) &&
+            copy.Boundary.Frame.ToWorld(copy.Passages[0].Points[1]).SequenceEqual(passageWorld) &&
+            Validation.Evaluate(project,copy,Array.Empty<Placement>()).Checks[RoomAccess.EntryCheck]==CheckState.Pass,
+            "moving the room coordinate frame and serialization preserve the world coordinates of both access inputs");
+
+        var shoe=Make(RoomMode.Shoe,10000,6000);
+        shoe.Doors.Add(new DoorOpening{Start=new V2(2000,0),End=new V2(2900,0),Side=DoorSide.Dirty});
+        shoe.Doors.Add(new DoorOpening{Start=new V2(7000,0),End=new V2(7900,0),Side=DoorSide.Dirty});
+        shoe.Doors.Add(new DoorOpening{Start=new V2(4500,6000),End=new V2(5400,6000),Side=DoorSide.Clean});
+        shoe.Closures.Add(new Region{Points=Geometry.Rect(0,2700,4000,Equipment.ShoeDepthMm)});
+        shoe.Closures.Add(new Region{Points=Geometry.Rect(6000,2700,4000,Equipment.ShoeDepthMm)});
+        var shoeCabinet=new Placement{EquipmentId="S24",Position=new V2(4000,2700),CrossingEnabled=true};
+        check=Validation.Evaluate(project,shoe,new[]{shoeCabinet});
+        Assert(check.Checks["hygiene_without_crossing"]==CheckState.Pass && check.Checks["workflow_with_crossing"]==CheckState.Pass &&
+            check.GeometricAvailable==24,"multiple shoe-room doors preserve the physical dirty/clean separation and low-cabinet crossing");
+        shoe.Closures.RemoveAt(1);
+        Assert(Validation.Evaluate(project,shoe,new[]{shoeCabinet}).Checks["hygiene_without_crossing"]==CheckState.Fail &&
+            BypassPath.Find(shoe,new[]{shoeCabinet}).Count>1,
+            "the bypass checker can show a path between explicit dirty and clean doors when the barrier is broken");
+
+        project.SchemaVersion="2.0";
+        project.Population.Registered=601;project.Population.Shift=300;project.Population.Reserve=.1m;
+        var first=project.Rooms.First(r=>r.Mode==RoomMode.FirstChange);first.ReserveOverride=.25m;
+        first.Candidates.Add(new Candidate());first.PreviewVisible=true;
+        project.UpgradeSchema();
+        Assert(project.Population.PeoplePerShift==300 && project.Population.ShiftCount==2 && project.Population.For(first)==330 &&
+            project.Population.Registered==601 && project.Population.Reserve==.1m && first.ReserveOverride==.25m &&
+            !first.PreviewVisible && first.Candidates.Count==0,"migration keeps raw legacy fields, applies the fixed factor once and discards old targets");
+        first.Candidates.Add(new Candidate());project.ChangePopulation(new Population{ShiftCount=1});
+        Assert(first.Candidates.Count==0 && project.Population.For(first)==165 && project.Population.Registered==601,
+            "switching shifts invalidates candidates while retaining the original drawing inputs");
+    }
+
     static void IrregularBoundaryAndWorkflowChecks()
     {
         var outline=LOutline();var boundary=BoundaryEditing.FromOutline(outline,new Frame(),"USER-L");
@@ -137,9 +221,9 @@ static class Program
         Assert(AreaPlanning.IsPreviewCurrent(project.Population,r,0),"equivalent decimal input scales and cabinet option order do not invalidate a completed preview");
         r.Options.AllowStacking=!r.Options.AllowStacking;
         Assert(!AreaPlanning.IsPreviewCurrent(project.Population,r,0),"changing the stacking decision requires a new pre-boundary preview");
-        r.Options.AllowStacking=!r.Options.AllowStacking;project.Population.Registered++;
+        r.Options.AllowStacking=!r.Options.AllowStacking;project.Population.PeoplePerShift++;
         Assert(!AreaPlanning.IsPreviewCurrent(project.Population,r,0),"changing the people target invalidates the old planning preview");
-        project.Population.Registered--;r.Candidates.Add(new Candidate());
+        project.Population.PeoplePerShift--;r.Candidates.Add(new Candidate());
         Assert(AreaPlanning.IsPreviewCurrent(project.Population,r,0),"preview completion does not depend on random candidate or equipment IDs");
         var restored=Serialization.Read<Project>(Serialization.Write(project));
         Assert(restored.Rooms[0].Boundary!.Outline!.Count==6 && restored.Rooms[0].PlanningPreviewOption==0 && AreaPlanning.IsPreviewCurrent(restored.Population,restored.Rooms[0],0),"actual polygon and workflow state survive save and reopen together");
@@ -229,7 +313,8 @@ static class Program
         var room=Make(RoomMode.Shoe);var stats=Validation.Evaluate(Project.Create(),room,legacy);
         Assert(stats.Nominal==144 && stats.GeometricAvailable==0 && stats.Effective==null && stats.Checks[ShoeStacking.CheckKey]==CheckState.Fail,"illegal S48 keeps nominal storage visible but cannot contribute usable capacity or certify the room");
         Assert(Validation.Evaluate(Project.Create(),room,legal).Checks[ShoeStacking.CheckKey]==CheckState.Pass,"valid mixed storage is not rejected merely because it contains S48");
-        var project=Project.Create();var estimate=AreaPlanning.Estimate(project.Population,project.Rooms[0]);
+        var project=Project.Create();project.ChangePopulation(new Population{ShiftCount=1,PeoplePerShift=545});
+        var estimate=AreaPlanning.Estimate(project.Population,project.Rooms[0]);
         Assert(estimate.Options.Any(o=>o.Items.Any(i=>i.EquipmentId=="S48")) && estimate.Options.All(o=>o.Nominal>=600 && ShoeStacking.Violations(o.Items).Count==0),"area previews use the same 24-48-24 rule and still meet the declared target");
         project.Rooms[0].Boundary=new Boundary{Width=10800,Height=10900};var generated=Layout.Generate(project,project.Rooms[0]);
         Assert(generated.Candidates.Any(c=>c.Items.Any(i=>i.EquipmentId=="S48") && c.Statistics.Nominal>=600) && generated.Candidates.All(c=>ShoeStacking.Violations(c.Items).Count==0),"rectangle generation provides genuine target-capacity alternating stacks without any all-48 option");
@@ -293,7 +378,7 @@ static class Program
         }
         Assert(Serialization.Write(project)==original,"pre-boundary area preview does not alter room state or create a candidate");
         var shoes=project.Rooms[0];
-        var shoeEstimate=AreaPlanning.Estimate(project.Population,shoes);
+        var shoeEstimate=AreaPlanning.Estimate(new Population{ShiftCount=1,PeoplePerShift=545},shoes);
         Assert(shoeEstimate.Options.Any(o=>Math.Abs(o.WidthMm-10800)<.01 && Math.Abs(o.HeightMm-10900)<.01 && Math.Abs(o.AreaM2-117.72)<.001 && o.Nominal==600),"600-person estimate reproduces documented 6-row R650 planning template");
         Assert(shoeEstimate.Options.Any(o=>o.Items.Any(p=>p.EquipmentId=="S48") && o.Items.Any(p=>p.Equipment.IsShoe && p.CrossingEnabled)),"stacked estimate retains explicit low-cabinet crossing locations");
         shoes.Options.ShoeCapacities=new List<int>{18};shoes.Options.AllowStacking=false;
@@ -303,10 +388,10 @@ static class Program
         project=Project.Create();var second=project.Rooms.First(r=>r.Mode==RoomMode.SecondChange);
         second.Options.HangerMaxSegmentMm=350;second.Options.HookStartMarginMm=80;second.Options.HookEndMarginMm=80;
         var segmented=AreaPlanning.Estimate(project.Population,second);
-        Assert(segmented.Target==150 && segmented.Options.All(o=>o.Items.Count==75 && o.Nominal==150 && Math.Abs(o.Items.Sum(i=>i.Length)-19500)<.01),"hanging area estimates account for endpoint losses on each short segment");
+        Assert(segmented.Target==165 && segmented.Options.All(o=>o.Items.Count==83 && o.Nominal==165 && Math.Abs(o.Items.Sum(i=>i.Length)-21480)<.01),"hanging area estimates account for endpoint losses on each short segment");
         second.ReserveOverride=.1m;
-        Assert(AreaPlanning.Estimate(project.Population,second).Target==165 && AreaPlanning.Estimate(project.Population,project.Rooms[0]).Target==600,"area preview uses per-room population and reserve rules");
-        project.Population=new Population{Registered=0,Shift=0};
+        Assert(AreaPlanning.Estimate(project.Population,second).Target==165 && AreaPlanning.Estimate(project.Population,project.Rooms[0]).Target==660,"area preview uses the fixed factor and ignores archived room reserves");
+        project.Population=new Population{PeoplePerShift=0};
         Assert(AreaPlanning.Estimate(project.Population,second).Options.Count==0,"zero-person room does not suggest a misleading nonzero minimum area");
         var single=EquipmentPresentation.Describe(new Placement{EquipmentId="S24"},new LayoutOptions());
         var stacked=EquipmentPresentation.Describe(new Placement{EquipmentId="S48"},new LayoutOptions());
@@ -324,18 +409,19 @@ static class Program
     {
         UpdatedDimensionsChecks();
         LockerAisleChecks();
+        RoomAccessChecks();
         IrregularBoundaryAndWorkflowChecks();
         ShoeStackingChecks();
         BoundaryEditingChecks();
         AreaAndIdentificationChecks();
         var p=Project.Create();
-        Assert(p.Rooms.Select(p.Population.For).SequenceEqual(new[]{600,300,150,300,150}),"three room populations 600/300/150");
-        p.ChangePopulation(new Population{Registered=601,Shift=301});
-        Assert(p.Rooms.Select(p.Population.For).SequenceEqual(new[]{601,301,151,300,150}),"odd roster/shift totals preserved");
+        Assert(p.Rooms.Select(p.Population.For).SequenceEqual(new[]{660,330,165,330,165}),"double shift scales storage while second-change capacity stays on one shift");
+        p.ChangePopulation(new Population{ShiftCount=1});
+        Assert(p.Rooms.Select(p.Population.For).SequenceEqual(new[]{330,165,165,165,165}),"single shift at 300 people uses 330 shared places and 165 per gender");
+        p.ChangePopulation(new Population{ShiftCount=1,PeoplePerShift=301});
+        Assert(p.Rooms.Select(p.Population.BaseFor).SequenceEqual(new[]{301,151,151,150,150}) &&
+            p.Rooms.Select(p.Population.For).SequenceEqual(new[]{332,167,167,165,165}),"split odd headcount before rounding each room up");
         p=Project.Create();
-        p.Rooms.Single(r=>r.Id=="male_second").ReserveOverride=.1m;
-        Assert(p.Population.For(p.Rooms[0])==600 && p.Population.For(p.Rooms.Single(r=>r.Id=="male_first"))==300 && p.Population.For(p.Rooms.Single(r=>r.Id=="male_second"))==165,"room-specific hanging reserve does not change shoe or personal locker targets");
-        p.Rooms.Single(r=>r.Id=="male_second").ReserveOverride=null;
         Assert(Equipment.Get("S24").Capacity==24 && Equipment.Get("S48").Boxes==2 && Equipment.Get("S48").Capacity==48,"shoe paired cells and stack boxes");
         Assert(Capacity.Run(7500,new[]{12,18,24})!.Sum()==90 && Capacity.Run(1250,new[]{12,18,24})==null,"whole module run decomposition");
         var hanger=new Placement{EquipmentId="HANGER_CUSTOM",Length=1000};
@@ -376,10 +462,10 @@ static class Program
         Assert(Validation.Evaluate(p,room,new[]{barrier}).Checks["hygiene_without_crossing"]==CheckState.Fail,"ten millimeter crack is detected without coarse raster");
         room.Closures[1].Points=Geometry.Rect(6000,2700,4000,Equipment.ShoeDepthMm);barrier.EquipmentId="S48";barrier.CrossingEnabled=false;
         Assert(Validation.Evaluate(p,room,new[]{barrier}).Checks["workflow_with_crossing"]==CheckState.Fail,"stacked storage does not invent crossing");
-        var baseline=p.Rooms[0];baseline.Boundary=new Boundary{Width=10800,Height=10900};
+        var baseline=p.Rooms[0];baseline.Boundary=new Boundary{Width=11800,Height=11900};
         var before=Serialization.Write(baseline.Placed);
         var search=Layout.Generate(p,baseline);
-        Assert(search.Candidates.Count>1 && search.Candidates.Any(c=>c.Statistics.Nominal>=600),"600-person multiple real shoe arrangements");
+        Assert(search.Candidates.Count>1 && search.Candidates.Any(c=>c.Statistics.Nominal>=660),"660-person multiple real shoe arrangements");
         Assert(search.Candidates.All(c=>c.Statistics.Checks["geometry"]==CheckState.Pass),"S sectors and connector cabinets do not overlap");
         Assert(search.Candidates.All(c=>c.Statistics.Effective==null) && Serialization.Write(baseline.Placed)==before,"candidate generation leaves placed drawing state intact");
         foreach(var mode in new[]{RoomMode.FirstChange,RoomMode.SecondChange})
@@ -448,7 +534,7 @@ static class Program
         var obstructed=Make(RoomMode.Shoe,22000,18000);obstructed.Obstacles.Add(new Region{Points=Geometry.Rect(1000,1000,1200,1200)});
         var fitted=Layout.Generate(p,obstructed);
         Assert(fitted.Candidates.Any(c=>c.Statistics.Checks["geometry"]==CheckState.Pass),"candidate fitting searches alternative obstacle-free offsets without adding translated duplicates");
-        p=Project.Create();p.ChangePopulation(new Population{Registered=501,Shift=251,Reserve=.1m});
+        p=Project.Create();p.ChangePopulation(new Population{ShiftCount=1,PeoplePerShift=501});
         Assert(p.Population.For(p.Rooms.Single(r=>r.Id=="male_first"))==277 && p.Population.For(p.Rooms.Single(r=>r.Id=="female_first"))==275,"reserve ceilings are applied after integer gender splitting");
         p=Project.Create();var fixtureDir=args.Length==2 && args[0]=="--fixtures"?args[1]:null;
         foreach(var mode in new[]{RoomMode.Shoe,RoomMode.FirstChange,RoomMode.SecondChange})
