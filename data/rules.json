@@ -108,6 +108,12 @@
       "severity": "hard",
       "rule": "首版三模式（换鞋/一更/二更）均须自动候选、拖动、落图和统计；房间实例切换状态独立",
       "basis": "latest_user_followup_2026-11-17"
+    },
+    {
+      "id": "HYG003",
+      "severity": "hard",
+      "rule": "每个S48的柜链两端必须各相接一个S24单柜，形成24—48—24；禁止全S48、相邻S48和链端S48，S12/S18/转角不能替代所需两邻。生成、面积估算、编辑和校核统一执行。",
+      "basis": "latest_user_2026-11-18"
     }
   ],
   "validation_states": [

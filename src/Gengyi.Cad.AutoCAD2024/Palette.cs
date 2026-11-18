@@ -47,7 +47,7 @@ namespace Gengyi.Cad.AutoCAD2024
         private readonly NumericUpDown aisle=Number(10000,1000),margin=Number(10000,1000),operation=Number(10000,0),rear=Number(1000,0),maxSegment=Number(50000,3000);
         private readonly NumericUpDown pitch=Number(10000,100),startMargin=Number(10000,50),endMargin=Number(10000,50),elevation=Number(20000,0);
         private readonly NumericUpDown walkWidth=Number(2000,600),segmentGap=Number(10000,100),customPeople=Number(10000,0),roomReserve=Number(100,0);
-        private readonly CheckBox reserveOverride=Check("本房间使用独立备用率"),stack=Check("允许局部双柜叠放（S48）"),orth=Check("沿房间方向正交拖动、旋转");
+        private readonly CheckBox reserveOverride=Check("本房间使用独立备用率"),stack=Check("允许48人双柜（两邻必须24人单柜）"),orth=Check("沿房间方向正交拖动、旋转");
         private readonly CheckBox actionsVerified=Check("已实际核对柜门、更衣动作和操作深度"),installationVerified=Check("已实际核对吊挂标高、支撑及衣物占用");
         private readonly CheckedListBox shoeTypes=new CheckedListBox{Height=68,CheckOnClick=true,BorderStyle=BorderStyle.FixedSingle};
         private readonly ComboBox rectangleChoices=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,IntegralHeight=false,DropDownHeight=160};
@@ -137,7 +137,7 @@ namespace Gengyi.Cad.AutoCAD2024
             shoeSettings=Card(settings,"换鞋柜参数","S24 单柜每侧3层；S48 上下两柜每侧共6层。",boldFont);
             NumberRow(shoeSettings,"鞋柜到边界 mm",margin);Add(shoeSettings,stack);Add(shoeSettings,Text("允许的单柜型号（不会拉伸设备）："));
             foreach(string sku in new[]{"S12","S18","S24"})shoeTypes.Items.Add(sku,true);Add(shoeSettings,shoeTypes);
-            tips.SetToolTip(stack,"S48 为上下两柜、48人、96格、高1200mm；不自动作为600mm跨坐位置。");
+            tips.SetToolTip(stack,"每个48人双柜必须由两个24人单柜相邻夹住：24—48—24。禁止连续48、端部48，以及用12/18或转角代替相邻24；S48自身不作为跨坐位置。");
             hangerSettings=Card(settings,"二更挂架参数","每段分别扣端距；650 mm 是吊杆构件尺寸，不是安装标高。",boldFont);
             NumberRow(hangerSettings,"最长单段 mm",maxSegment,"挂钩节距 mm",pitch);NumberRow(hangerSettings,"前端退距 mm",startMargin,"后端退距 mm",endMargin);
             NumberRow(hangerSettings,"分段间距 mm",segmentGap,"安装标高 mm",elevation);Add(hangerSettings,Text("安装标高填 0 表示待核；450 mm 只表示已知架体投影。"));Add(hangerSettings,installationVerified);
@@ -368,8 +368,10 @@ namespace Gengyi.Cad.AutoCAD2024
                     rebuild.Visible=bind.Visible=missing>0;rebuild.Enabled=bind.Enabled=true;
                     bool badGeometry=selected.Statistics.Checks.TryGetValue("geometry",out var geometry) && geometry==CheckState.Fail;
                     bool badBoundary=selected.Statistics.Checks.TryGetValue("boundary",out var edge) && edge==CheckState.Fail;
-                    commit.Enabled=missing==0 && !badGeometry && !badBoundary;
-                    tips.SetToolTip(commit,missing>0?"先接入设备图块，才能确认入图。":badGeometry || badBoundary?"先修正碰撞、尺寸或边距问题。":"待核条件会在入图时要求明确作为草案确认。");
+                    bool badStacking=selected.Statistics.Checks.TryGetValue(ShoeStacking.CheckKey,out var stackingState) && stackingState==CheckState.Fail;
+                    if(badStacking)candidateDetail.Text+="\r\n交错规则未满足：每个48人柜的两端都须相接24人单柜。";
+                    commit.Enabled=missing==0 && !badGeometry && !badBoundary && !badStacking;
+                    tips.SetToolTip(commit,badStacking?"每个48人柜两端必须是相接的24人单柜，先修正交错布置。":missing>0?"先接入设备图块，才能确认入图。":badGeometry || badBoundary?"先修正碰撞、尺寸或边距问题。":"待核条件会在入图时要求明确作为草案确认。");
                 }
                 else{candidateDetail.Text="尚无方案。定范围后点击“生成布置方案”。";sourceInfo.Visible=false;rebuild.Visible=bind.Visible=false;}
                 nextStep.Enabled=true;
@@ -398,15 +400,18 @@ namespace Gengyi.Cad.AutoCAD2024
         {
             footerTitle.Text=$"目标 {stats.Target}  ·  名义 {stats.Nominal}  ·  有效 {(stats.Effective.HasValue?stats.Effective.Value.ToString():"待核")}";
             footerDetail.Text=$"{prefix.Trim()}  /  条件缺口 {stats.ConditionalDeficit} 人  /  设备投影 {stats.ProjectionM2:0.##} ㎡";
+            bool badStacking=stats.Checks.TryGetValue(ShoeStacking.CheckKey,out var state) && state==CheckState.Fail;
+            if(badStacking)footerDetail.Text+="\r\n48人柜两邻24人柜：未通过，请修正24—48—24布置。";
+            footerDetail.ForeColor=badStacking?Color.Firebrick:Muted;
             statistics.Text=prefix.Trim()+"\r\n"+footerTitle.Text+"\r\n"+
                 $"地面柜组 {stats.Groups} / 箱体 {stats.Boxes} / 转角 {stats.Corners}\r\n挂架 {stats.HangerSegments} 段 / 总长 {stats.HangerLengthMm:0.###} mm\r\n"+
                 (stats.NominalShoeCells>0?$"名义储格 {stats.NominalShoeCells}（每人2格）\r\n":"")+
-                string.Join("\r\n",stats.Checks.Select(c=>CheckName(c.Key)+"："+StateName(c.Value)))+"\r\n"+
+                string.Join("\r\n",stats.Checks.Where(c=>c.Key!=ShoeStacking.CheckKey || lastSession?.Room.Mode==RoomMode.Shoe).Select(c=>CheckName(c.Key)+"："+StateName(c.Value)))+"\r\n"+
                 string.Join("\r\n",stats.Issues.Take(16).Select(i=>i.Message+(i.InstanceId.Length>0?" ["+i.InstanceId.Substring(0,Math.Min(8,i.InstanceId.Length))+"]":"")));
         }
         private static string CheckName(string key)=>key switch
         {
-            "geometry"=>"碰撞与尺寸","boundary"=>"房间边界与边距","connections"=>"柜组连接","front_access"=>"操作侧可达",
+            "geometry"=>"碰撞与尺寸","boundary"=>"房间边界与边距","connections"=>"柜组连接",ShoeStacking.CheckKey=>"48人柜两邻24人柜","front_access"=>"操作侧可达",
             "entry_reachability"=>"入口可达","hygiene_without_crossing"=>"实体脏净分隔","walking_without_crossing"=>"人员无法绕行",
             "workflow_with_crossing"=>"跨柜转换流程","source_block"=>"设备图块比对","operation"=>"实际操作空间","installation"=>"挂架安装条件","auxiliary_operations"=>"辅助设备操作",_=>key
         };

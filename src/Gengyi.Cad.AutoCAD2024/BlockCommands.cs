@@ -179,6 +179,8 @@ namespace Gengyi.Cad.AutoCAD2024
             var item=new Placement{RoomId=s.Room.Id,EquipmentId=id,Position=position,Length=length,CrossingEnabled=id=="S12"||id=="S18"||id=="S24",LocalHooks=mapping?.LocalHooks};
             if(id=="HANGER_CUSTOM" && item.LocalHooks==null)item.LocalHooks=Capacity.Hooks(item,s.Room.Options).Select(p=>p-position).ToList();
             Layout.ResolveMapping(s.Project,item);Geometry.Footprint(item);
+            var scene=Commands.HasPreview(s)?s.Room.Candidates[s.Room.SelectedCandidate].Items:s.Room.Placed;
+            ShoeStacking.RejectNewViolations(scene,scene.Concat(new[]{item}).ToList());
             if(Commands.HasPreview(s))
                 s.Edit(_=>{var candidate=s.Room.Candidates[s.Room.SelectedCandidate];candidate.Items.Add(item);candidate.Statistics=Validation.Evaluate(s.Project,s.Room,candidate.Items);});
             else

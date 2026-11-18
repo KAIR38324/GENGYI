@@ -1,9 +1,9 @@
 {
-  "version": "0.3.1",
+  "version": "0.3.2",
   "source_base_commit": "46a5b44a45c2f9966d7d564f2ea6063622e34a5f",
   "target": "AutoCAD 2024 Windows x64 .NET Framework 4.8",
   "python_reference_tests": 16,
-  "core_checks": 79,
+  "core_checks": 100,
   "json_schema_export_modes": [
     "shoe",
     "first_change",
@@ -20,5 +20,6 @@
   "pre_boundary_area_preview": "implemented for all three modes; whole-room planning envelopes and equipment projections separated; assumptions visible",
   "ui_workflow": "room/population > immediate area and dimensions > temporary rectangle > candidates > native commit; advanced controls separated",
   "cabinet_identification": "model, people, per-side levels, stack box count and height visible on preview/native attributes; GYSETUP migrates old managed instances",
-  "custom_boundary_reselection": "own rectangle is the primary entry; placed block world positions, obstacle/closure/seed world positions retained; clockwise orientation normalized; noncoplanar changes rejected atomically"
+  "custom_boundary_reselection": "own rectangle is the primary entry; placed block world positions, obstacle/closure/seed world positions retained; clockwise orientation normalized; noncoplanar changes rejected atomically",
+  "S48_adjacency": "mandatory physical S24-S48-S24; no adjacent or end S48; same rule in estimates, generation, edits and commit; invalid S48 excluded from geometric capacity"
 }

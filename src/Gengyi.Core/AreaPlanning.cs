@@ -50,7 +50,7 @@ namespace Gengyi.Core
                 Basis = (room.CustomPeople.HasValue ? "本房自定义人数" : room.Mode == RoomMode.SecondChange ? "按当班人数" : "按在册人数") +
                     $"；备用 {(room.ReserveOverride ?? population.Reserve)*100:0.##}%；目标 {target} 人",
                 Assumptions = room.Mode == RoomMode.Shoe
-                    ? $"含四周 {o.ShoeBoundaryMm:0} mm 边距与假定 R600 扇形角；连接净距至少 {aisle:0} mm。门柱、封闭与脏净绕行待选框后校核。"
+                    ? $"含四周 {o.ShoeBoundaryMm:0} mm 边距与假定 R600 扇形角；连接净距至少 {aisle:0} mm。48人柜必须24—48—24交错。门柱、封闭与脏净绕行待选框后校核。"
                     : $"按操作/通行净距 {aisle:0} mm、背距 {o.RearGapMm:0} mm 预排；门柱、更衣动作及辅助设备另核。" +
                         (room.Mode == RoomMode.SecondChange ? $" 挂钩节距 {o.HookPitchMm}、端距 {o.HookStartMarginMm}/{o.HookEndMarginMm} mm；450 mm 仅架体深度，衣物与安装待核。" : "")
             };
@@ -101,13 +101,13 @@ namespace Gengyi.Core
                 for (int rows = 3; rows <= 24; rows++)
                     foreach (bool stacked in o.AllowStacking && o.ShoeCapacities.Contains(24) ? new[] { false, true } : new[] { false })
                     {
-                        double start = Math.Ceiling(Math.Max(1000, (target - (rows-1)*connector*.012) / (rows*.012*(stacked ? 2 : 1))) / 500) * 500;
+                        double start = Math.Ceiling(Math.Max(1000, (target - (rows-1)*connector*.012) / (rows*.012*(stacked ? 1.5 : 1))) / 500) * 500;
                         for (double run = start; run <= start + 8000; run += 500)
                         {
                             if (!chains.TryGetValue(run, out var chain)) chains[run] = chain = Capacity.Run(run, o.ShoeCapacities);
                             if (chain == null) continue;
                             int nominal = chain.Sum()*rows + (rows-1)*connector*12/1000;
-                            int stackable = Math.Max(0, chain.Count(c => c == 24)*rows + (connector == 2000 ? rows-1 : 0) - 1);
+                            int stackable = ShoeStacking.MaximumStackableInRun(chain)*rows;
                             if (nominal + (stacked ? 24*stackable : 0) < target) continue;
                             if (stacked && nominal >= target) break;
                             int r = rows, con = connector; double len = run;
@@ -116,7 +116,7 @@ namespace Gengyi.Core
                                 W = run + 1200 + 2*o.ShoeBoundaryMm,
                                 H = rows*600 + (rows-1)*connector + 2*o.ShoeBoundaryMm,
                                 Stacked = stacked,
-                                Name = $"S形{rows}排 · {(stacked ? "局部双柜叠放" : "单柜3层")}",
+                                Name = $"S形{rows}排 · {(stacked ? "24—48—24交错" : "单柜3层")}",
                                 Build = () => Layout.ShoeTemplate(room, r, len, con, chain, stacked ? target : 0).Items
                             });
                             break;

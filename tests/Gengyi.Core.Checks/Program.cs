@@ -10,6 +10,51 @@ static class Program
     static void Assert(bool value, string message) { if (!value) throw new Exception(message); passed++; Console.WriteLine("PASS " + message); }
     static Room Make(RoomMode mode, double w=15000, double h=12000) => new Room
     { Id="test", Mode=mode, Boundary=new Boundary { Width=w,Height=h } };
+    static List<Placement> ShoeLine(params string[] models)=>models.Select((id,i)=>new Placement
+        {Id="cabinet-"+i,EquipmentId=id,Position=new V2(2000+i*2000,2000),CrossingEnabled=id=="S24"}).ToList();
+    static void ShoeStackingChecks()
+    {
+        var legal=ShoeLine("S24","S48","S24");
+        Assert(ShoeStacking.Violations(legal).Count==0,"24-48-24 with real end-face contact satisfies the mandatory low-neighbour rule");
+        Assert(ShoeStacking.Violations(legal.AsEnumerable().Reverse().ToList()).Count==0,"stacking adjacency uses physical ports, not list order or group IDs");
+        var rotated=Serialization.Copy(legal);foreach(var p in rotated){p.Position=p.Position.Rotate(90)+new V2(12000,1000);p.Rotation+=90;}
+        Assert(ShoeStacking.Violations(rotated).Count==0,"24-48-24 adjacency survives whole-chain rotation");
+        var reverse=Serialization.Copy(legal);reverse[0].Position+=new V2(2000,600);reverse[0].Rotation=180;
+        Assert(ShoeStacking.Violations(reverse).Count==0,"opposite source block directions still recognise the same touching end face");
+        Assert(ShoeStacking.Violations(ShoeLine("S48","S48","S48")).Select(i=>i.InstanceId).Distinct().Count()==3,"all-48 storage chains are explicitly rejected");
+        Assert(ShoeStacking.Violations(ShoeLine("S24","S48","S48","S24")).Select(i=>i.InstanceId).Distinct().Count()==2,"two adjacent 48-person cabinets are both marked invalid");
+        Assert(ShoeStacking.Violations(ShoeLine("S48","S24")).Any(i=>i.InstanceId=="cabinet-0"),"an end-position 48-person cabinet cannot claim a missing second low neighbour");
+        foreach(string id in new[]{"S12","S18"})
+        {
+            var shortNeighbour=Serialization.Copy(legal);shortNeighbour[0].EquipmentId=id;shortNeighbour[0].Position.X=4000-shortNeighbour[0].Equipment.Length;
+            Assert(ShoeStacking.Violations(shortNeighbour).Count==1,id+" touching the correct end cannot substitute for the required S24");
+        }
+        var broadside=Serialization.Copy(legal);broadside[0].Position=new V2(4000,2600);
+        Assert(ShoeStacking.Violations(broadside).Count==1,"a low cabinet beside a long face is not a cabinet-chain neighbour");
+        var gap=Serialization.Copy(legal);gap[0].Position.X-=1;
+        Assert(ShoeStacking.Violations(gap).Count==1,"a detached S24 cannot satisfy the stacking rule through an empty gap");
+        gap[0].Position.X+=.95;
+        Assert(ShoeStacking.Violations(gap).Count==0,"contact tolerance works across spatial index bucket boundaries");
+        var automatic=ShoeLine("S24","S24","S24","S24","S24");
+        int upgraded=ShoeStacking.StackToTarget(automatic,1000);
+        Assert(upgraded==2 && automatic.Select(i=>i.EquipmentId).SequenceEqual(new[]{"S24","S48","S24","S48","S24"}) && ShoeStacking.Violations(automatic).Count==0,"automatic stacking preserves low end cabinets and alternating low neighbours");
+        Assert(ShoeStacking.MaximumStackableInRun(new[]{24,24,24,24,24,18,24,24,24})==3,"pre-boundary stack budget includes protected low ends and mixed-module breaks");
+        var changed=Serialization.Copy(legal);changed[0].EquipmentId="S48";bool rejected=false;
+        try{ShoeStacking.RejectNewViolations(legal,changed);}catch(ArgumentException){rejected=true;}
+        Assert(rejected && legal[0].EquipmentId=="S24","changing a required low neighbour to S48 is rejected before drawing mutation");
+        rejected=false;try{ShoeStacking.RejectNewViolations(legal,legal.Skip(1).ToList());}catch(ArgumentException){rejected=true;}
+        Assert(rejected,"deleting a required S24 neighbour is rejected");
+        var legacy=ShoeLine("S48","S48","S48");var repair=Serialization.Copy(legacy);repair[0].EquipmentId="S24";
+        bool repaired=true;try{ShoeStacking.RejectNewViolations(legacy,repair);}catch(ArgumentException){repaired=false;}
+        Assert(repaired && ShoeStacking.Violations(repair).Count<ShoeStacking.Violations(legacy).Count,"legacy invalid chains can be repaired one cabinet at a time");
+        var room=Make(RoomMode.Shoe);var stats=Validation.Evaluate(Project.Create(),room,legacy);
+        Assert(stats.Nominal==144 && stats.GeometricAvailable==0 && stats.Effective==null && stats.Checks[ShoeStacking.CheckKey]==CheckState.Fail,"illegal S48 keeps nominal storage visible but cannot contribute usable capacity or certify the room");
+        Assert(Validation.Evaluate(Project.Create(),room,legal).Checks[ShoeStacking.CheckKey]==CheckState.Pass,"valid mixed storage is not rejected merely because it contains S48");
+        var project=Project.Create();var estimate=AreaPlanning.Estimate(project.Population,project.Rooms[0]);
+        Assert(estimate.Options.Any(o=>o.Items.Any(i=>i.EquipmentId=="S48")) && estimate.Options.All(o=>o.Nominal>=600 && ShoeStacking.Violations(o.Items).Count==0),"area previews use the same 24-48-24 rule and still meet the declared target");
+        project.Rooms[0].Boundary=new Boundary{Width=10700,Height=10600};var generated=Layout.Generate(project,project.Rooms[0]);
+        Assert(generated.Candidates.Any(c=>c.Items.Any(i=>i.EquipmentId=="S48") && c.Statistics.Nominal>=600) && generated.Candidates.All(c=>ShoeStacking.Violations(c.Items).Count==0),"rectangle generation provides genuine target-capacity alternating stacks without any all-48 option");
+    }
     static double Distance(double[] a,double[] b)=>Math.Sqrt(a.Select((v,i)=>(v-b[i])*(v-b[i])).Sum());
     static void BoundaryEditingChecks()
     {
@@ -98,6 +143,7 @@ static class Program
     }
     static void Main(string[] args)
     {
+        ShoeStackingChecks();
         BoundaryEditingChecks();
         AreaAndIdentificationChecks();
         var p=Project.Create();

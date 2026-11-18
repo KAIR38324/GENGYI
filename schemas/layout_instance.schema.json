@@ -260,6 +260,16 @@
             "requires_input",
             "approximate_only"
           ]
+        },
+        "stacking_neighbors": {
+          "description": "Every S48 requires a physically connected S24 at both ends.",
+          "enum": [
+            "not_run",
+            "pass",
+            "fail",
+            "requires_input",
+            "approximate_only"
+          ]
         }
       }
     },

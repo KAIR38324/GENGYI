@@ -26,7 +26,7 @@
     "S48"
   ],
   "stacking_enabled": true,
-  "stacking_policy": "storage_capacity_separate_from_crossing_eligibility",
+  "stacking_policy": "each_S48_requires_two_physically_adjacent_S24_neighbours",
   "default_layout_family": "original_S_shape",
   "orthogonal_drag_default": true,
   "allowed_rotations_deg": [

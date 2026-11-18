@@ -178,6 +178,7 @@ namespace Gengyi.Cad.AutoCAD2024
             NeedBoundary(s);
             if(s.Room.Candidates.Count==0)throw new ArgumentException("当前房间没有候选。");
             var chosen=Serialization.Copy(s.Room.Candidates[s.Room.SelectedCandidate]);
+            ShoeStacking.RequireValid(chosen.Items);
             foreach(var p in chosen.Items){Layout.ResolveMapping(s.Project,p);Blocks.Mapping(s,p);}
             chosen.Statistics=Validation.Evaluate(s.Project,s.Room,chosen.Items);
             if(chosen.Statistics.Checks["geometry"]==CheckState.Fail || chosen.Statistics.Checks["boundary"]==CheckState.Fail)
@@ -185,6 +186,7 @@ namespace Gengyi.Cad.AutoCAD2024
             if(s.Room.Placed.Any(p=>p.Locked))throw new ArgumentException("当前房间含锁定设备，请先解锁后替换方案。");
             string action=s.Room.Placed.Count==0?"Replace":CadGeometry.Keyword(s.Document.Editor,"当前房间已有设备","Replace Append Cancel","Replace");
             if(action=="Cancel")throw new Cancelled();
+            if(action=="Append")ShoeStacking.RequireValid(s.Room.Placed.Concat(chosen.Items).ToList());
             int deficit=chosen.Statistics.Effective.HasValue?Math.Max(0,chosen.Statistics.Target-chosen.Statistics.Effective.Value):chosen.Statistics.ConditionalDeficit;
             if((chosen.Statistics.Effective==null || deficit>0) && CadGeometry.Keyword(s.Document.Editor,
                 deficit>0?$"当前方案仍缺 {deficit} 人位，是否按容量不足的待核草案入图":"当前方案尚有待核项，是否作为待核草案入图","Yes No","No")!="Yes")throw new Cancelled();
@@ -256,6 +258,7 @@ namespace Gengyi.Cad.AutoCAD2024
             var next=Serialization.Copy(original);next.EquipmentId=id;next.CrossingEnabled=id!="S48";next.PhysicalOutline=null;next.ScaleX=1;next.ScaleY=1;next.NativeGeometryUnverified=false;next.NativeIssue="";
             Layout.ResolveMapping(s.Project,next);
             if(preview){SavePreviewEdits(s,new List<Placement>{next});return;}
+            ShoeStacking.RejectNewViolations(s.Room.Placed,s.Room.Placed.Select(p=>p.Id==next.Id?next:p).ToList());
             s.Edit(tx=>
             {
                 if(next.MappingKey.Length==0 && original.Provenance=="image_reconstructed"){Blocks.Reconstruct(s,tx,new[]{next});Layout.ResolveMapping(s.Project,next);}
@@ -288,6 +291,8 @@ namespace Gengyi.Cad.AutoCAD2024
         public void Delete()=>Run(s=>
         {
             bool preview=HasPreview(s);var p=preview?PickPreview(s):Pick(s);if(p.Locked)throw new ArgumentException("设备已锁定。");
+            var scene=preview?s.Room.Candidates[s.Room.SelectedCandidate].Items:s.Room.Placed;
+            ShoeStacking.RejectNewViolations(scene,scene.Where(i=>i.Id!=p.Id).ToList());
             s.Edit(tx=>{if(preview){var candidate=s.Room.Candidates[s.Room.SelectedCandidate];candidate.Items.RemoveAll(i=>i.Id==p.Id);candidate.Statistics=Validation.Evaluate(s.Project,s.Room,candidate.Items);}else Erase(s,p.NativeHandle,tx);});
         });
         [CommandMethod("GENGYI","GYLENGTH",CommandFlags.Modal)]
@@ -327,7 +332,12 @@ namespace Gengyi.Cad.AutoCAD2024
                 if(!s.Project.Mappings.TryGetValue(item.MappingKey,out var map))throw new ArgumentException("缺少块标定。");
                 bool valid=s.Room.Mode==RoomMode.Shoe?item.Equipment.IsShoe||item.EquipmentId=="CORNER_R600":s.Room.Mode==RoomMode.FirstChange?item.EquipmentId=="LOCKER12":item.EquipmentId=="HANGER_CUSTOM";
                 if(!valid)throw new ArgumentException("该设备与当前房间模式不匹配。");
-                item.RoomId=s.Room.Id;CadGeometry.ReadTransform(s.Room,item,br,map);Store.Instance(br,item,tx);
+                var source=s.Project.Rooms.FirstOrDefault(r=>r.Id==item.RoomId);
+                if(source?.Id==s.Room.Id)throw new ArgumentException("设备已属于当前房间。");
+                if(source!=null)ShoeStacking.RejectNewViolations(source.Placed,source.Placed.Where(p=>p.NativeHandle!=br.Handle.ToString()).ToList());
+                item.RoomId=s.Room.Id;CadGeometry.ReadTransform(s.Room,item,br,map);
+                ShoeStacking.RejectNewViolations(s.Room.Placed,s.Room.Placed.Concat(new[]{item}).ToList());
+                Store.Instance(br,item,tx);
             });
         });
         [CommandMethod("GENGYI","GYCHECK",CommandFlags.Modal)]public void Check()=>Run(s=>
@@ -395,6 +405,8 @@ namespace Gengyi.Cad.AutoCAD2024
         }
         private static void SavePreviewEdits(Session s,List<Placement> copies)
         {
+            var scene=s.Room.Candidates[s.Room.SelectedCandidate].Items;
+            ShoeStacking.RejectNewViolations(scene,scene.Select(p=>copies.FirstOrDefault(q=>q.Id==p.Id)??p).ToList());
             s.Edit(_=>
             {
                 var candidate=s.Room.Candidates[s.Room.SelectedCandidate];
@@ -416,6 +428,7 @@ namespace Gengyi.Cad.AutoCAD2024
         private static void SaveEdits(Session s,List<Placement> copies)
         {
             var proposed=s.Room.Placed.Select(p=>copies.FirstOrDefault(q=>q.Id==p.Id)??p).ToList();
+            ShoeStacking.RejectNewViolations(s.Room.Placed,proposed);
             var stats=Validation.Evaluate(s.Project,s.Room,proposed);
             if(stats.Checks["geometry"]==CheckState.Fail || stats.Checks["boundary"]==CheckState.Fail)
                 if(CadGeometry.Keyword(s.Document.Editor,"最终位置未通过几何/净距检查，保留为明显未通过草案","Keep Cancel","Cancel")!="Keep")throw new Cancelled();

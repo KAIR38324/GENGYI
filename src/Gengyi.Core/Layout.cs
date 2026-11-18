@@ -101,7 +101,11 @@ namespace Gengyi.Core
                         if (maxRun < 1000) continue;
                         double desired = Math.Ceiling(Math.Max(1000, (target - (rows - 1) * connector * .012) / (rows * .012)) / 500) * 500;
                         var runs=new List<double>{Math.Min(desired,maxRun),Math.Min(desired+500,maxRun),maxRun};
-                        if(room.Options.AllowStacking){runs.Add(Math.Min(maxRun,Math.Max(1000,Math.Ceiling(desired/1000)*500)));runs.Add(Math.Min(maxRun,Math.Max(1000,desired-1000)));}
+                        if(room.Options.AllowStacking)
+                        {
+                            double stackedRun=Math.Ceiling(Math.Max(1000,(target-(rows-1)*connector*.012)/(rows*.018))/500)*500;
+                            foreach(double extra in new[]{0.0,500,1000,2000})runs.Add(Math.Min(maxRun,stackedRun+extra));
+                        }
                         foreach (double run in runs.Distinct())
                         {
                             var chain = Capacity.Run(run, room.Options.ShoeCapacities);
@@ -141,12 +145,7 @@ namespace Gengyi.Core
                 c.Items.Add(Place(room, "S" + (connector * 12 / 1000), right ? cx + 600 : cx, y + 600, 90, group: c.Id));
                 c.Items.Add(Place(room, "CORNER_R600", cx, y + 600 + connector, right ? 0 : 90, group: c.Id));
             }
-            int nominal = c.Items.Sum(p => p.Equipment.Capacity);
-            foreach (var p in c.Items.Where(p => p.EquipmentId == "S24").Skip(1).Reverse())
-            {
-                if (nominal >= stackedTarget) break;
-                p.EquipmentId = "S48"; p.CrossingEnabled = false; nominal += 24;
-            }
+            ShoeStacking.StackToTarget(c.Items,stackedTarget);
             if (c.Items.Any(p => p.EquipmentId == "S48")) c.Family += "/局部叠放";
             return c;
         }

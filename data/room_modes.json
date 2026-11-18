@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_local_date": "2026-11-17",
+  "updated_local_date": "2026-11-18",
   "scope": "mandatory_complete_v1_room_modes",
   "units": "mm",
   "equipment_catalog": "equipment_catalog.json",
@@ -60,7 +60,8 @@
         "two_cells_per_person": true,
         "validity_requires_both_faces_accessible": true,
         "storage_capacity_separate_from_crossing_eligibility": true,
-        "nominal_corner_capacity": 0
+        "nominal_corner_capacity": 0,
+        "S48_requires_two_S24_chain_neighbours": true
       },
       "requires_dirty_clean_topology_validation": true,
       "requires_auto_multiple_candidates": true,
